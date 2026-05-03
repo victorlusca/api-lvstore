@@ -123,51 +123,33 @@ async def update_ranking_points(app_id: str, update: RankingUpdate):
             pass # Se falhar a busca, continuamos com o que temos
 
     try:
-        # Lógica de atualização resiliente
-        if update.operacao == "setar":
-            # 1. Tenta INSERT OR REPLACE com game_id (schema novo)
-            try:
-                query = "INSERT OR REPLACE INTO player_points (game_id, total_points, discord_id) VALUES (?, ?, ?)"
-                params = (game_id or discord_id, int(update.valor), discord_id or game_id)
-                await sqlite_service.execute_update(app_id, query, params)
-            except HTTPException:
-                # 2. Tenta com discord_id (schema antigo)
-                query = "INSERT OR REPLACE INTO player_points (discord_id, total_points) VALUES (?, ?)"
-                params = (discord_id or game_id, int(update.valor))
-                await sqlite_service.execute_update(app_id, query, params)
-        else: # adicionar
-            try:
-                # Tenta o ON CONFLICT com game_id
-                query = """
-                INSERT INTO player_points (game_id, total_points, discord_id) 
-                VALUES (?, ?, ?)
-                ON CONFLICT(game_id) DO UPDATE SET total_points = total_points + ?
-                """
-                params = (game_id or discord_id, int(update.valor), discord_id or game_id, int(update.valor))
-                await sqlite_service.execute_update(app_id, query, params)
-            except HTTPException:
-                try:
-                    # Tenta o ON CONFLICT com discord_id
-                    query = """
-                    INSERT INTO player_points (discord_id, total_points) 
-                    VALUES (?, ?)
-                    ON CONFLICT(discord_id) DO UPDATE SET total_points = total_points + ?
-                    """
-                    params = (discord_id or game_id, int(update.valor), int(update.valor))
-                    await sqlite_service.execute_update(app_id, query, params)
-                except HTTPException:
-                    # Fallback final: INSERT OR IGNORE + UPDATE manual
-                    # Tenta ambos os campos no WHERE para garantir
-                    key_field = "game_id" if game_id else "discord_id"
-                    key_val = game_id or discord_id
-                    
-                    query_insert = f"INSERT OR IGNORE INTO player_points ({key_field}, total_points) VALUES (?, 0)"
-                    await sqlite_service.execute_update(app_id, query_insert, (key_val,))
-                    
-                    query_update = f"UPDATE player_points SET total_points = total_points + ? WHERE {key_field} = ?"
-                    await sqlite_service.execute_update(app_id, query_update, (int(update.valor), key_val))
+        # 1. Obter pontos atuais se for 'adicionar'
+        current_points = 0
+        if update.operacao == "adicionar":
+            # Tenta buscar por qualquer um dos IDs
+            query_get = "SELECT total_points FROM player_points WHERE game_id = ? OR discord_id = ? LIMIT 1"
+            res_pts = await sqlite_service.execute_query(app_id, query_get, (game_id or "NONE", discord_id or "NONE"))
+            if res_pts:
+                current_points = res_pts[0].get("total_points", 0)
+        
+        new_total = current_points + update.valor if update.operacao == "adicionar" else update.valor
+
+        # 2. LIMPEZA: Remove QUALQUER registro duplicado para este jogador
+        # Usamos game_id e discord_id para garantir que limpamos tudo
+        query_del = "DELETE FROM player_points WHERE (game_id IS NOT NULL AND game_id = ?) OR (discord_id IS NOT NULL AND discord_id = ?)"
+        await sqlite_service.execute_update(app_id, query_del, (game_id or "NONE", discord_id or "NONE"))
+
+        # 3. INSERÇÃO: Insere um registro único e limpo
+        # Tentamos o schema mais completo primeiro
+        try:
+            query_ins = "INSERT INTO player_points (game_id, total_points, discord_id) VALUES (?, ?, ?)"
+            await sqlite_service.execute_update(app_id, query_ins, (game_id or discord_id, int(new_total), discord_id or game_id))
+        except HTTPException:
+            # Se falhar, tenta o schema reduzido (apenas discord_id)
+            query_ins = "INSERT INTO player_points (discord_id, total_points) VALUES (?, ?)"
+            await sqlite_service.execute_update(app_id, query_ins, (discord_id or game_id, int(new_total)))
                 
-        return {"ok": True, "message": "Pontos atualizados com sucesso"}
+        return {"ok": True, "message": "Pontos atualizados com sucesso (substituído)"}
     except Exception as e:
         logging.error(f"Erro fatal ao atualizar pontos: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao salvar no banco de dados: {str(e)}")

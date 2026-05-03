@@ -10,7 +10,7 @@ from app.core.audit import audit_log
 
 router = APIRouter(prefix="/bots/{app_id}/players", tags=["Players"])
 
-@router.get("/", dependencies=[Depends(get_api_key)])
+@router.get("", dependencies=[Depends(get_api_key)])
 async def get_all_players(app_id: str):
     audit_log(app_id, "GET_PLAYERS", "Fetching all players with hours and points")
     
