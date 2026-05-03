@@ -33,6 +33,25 @@ async def get_ranking_points(app_id: str):
     ranking = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": ranking}
 
+@router.get("/total", dependencies=[Depends(get_api_key)])
+async def get_ranking_total(app_id: str):
+    audit_log(app_id, "GET_RANKING_TOTAL", "Fetching all players by total hours")
+    
+    query = """
+    SELECT 
+        p.playerName as nome,
+        p.playerLogin as login,
+        p.playerID as game_id,
+        p.discordUserID as discord_id,
+        COALESCE(h.total_hours, 0) as horas_totais
+    FROM players p
+    LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
+    ORDER BY CAST(COALESCE(h.total_hours, 0) AS REAL) DESC
+    """
+    
+    ranking = await sqlite_service.execute_query(app_id, query)
+    return {"ok": True, "data": ranking}
+
 @router.get("/active", dependencies=[Depends(get_api_key)])
 async def get_ranking_active(app_id: str):
     audit_log(app_id, "GET_RANKING_ACTIVE", "Fetching active players (in sessions)")
@@ -41,13 +60,15 @@ async def get_ranking_active(app_id: str):
     query = """
     SELECT 
         p.playerName as nome,
+        p.playerLogin as login,
         p.playerID as game_id,
+        p.discordUserID as discord_id,
         COALESCE(h.total_hours, 0) as horas_totais,
         s.status as sessao_status
     FROM players p
     JOIN active_sessions s ON p.playerID = s.user_id
-    LEFT JOIN player_total_hours h ON p.playerID = h.user_id
-    ORDER BY h.total_hours DESC
+    LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
+    ORDER BY CAST(COALESCE(h.total_hours, 0) AS REAL) DESC
     """
     
     active_players = await sqlite_service.execute_query(app_id, query)
@@ -61,12 +82,14 @@ async def get_ranking_inactive(app_id: str):
     query = """
     SELECT 
         p.playerName as nome,
+        p.playerLogin as login,
         p.playerID as game_id,
+        p.discordUserID as discord_id,
         COALESCE(h.total_hours, 0) as horas_totais
     FROM players p
-    LEFT JOIN player_total_hours h ON p.playerID = h.user_id
+    LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
     WHERE p.playerID NOT IN (SELECT user_id FROM active_sessions)
-    ORDER BY h.total_hours DESC
+    ORDER BY CAST(COALESCE(h.total_hours, 0) AS REAL) DESC
     """
     
     inactive_players = await sqlite_service.execute_query(app_id, query)        
@@ -74,11 +97,27 @@ async def get_ranking_inactive(app_id: str):
 
 @router.post("/horas", dependencies=[Depends(get_api_key)])
 async def update_ranking_hours(app_id: str, update: RankingUpdate):
-    audit_log(app_id, "UPDATE_RANKING_HOURS", f"Player: {update.game_id} | Op: {update.operacao} | Val: {update.valor}")
+    audit_log(app_id, "UPDATE_RANKING_HOURS", f"Player: {update.game_id} | Discord: {update.discord_id} | Op: {update.operacao} | Val: {update.valor}")
     
-    target_id = update.game_id
-    if not target_id:
-        raise HTTPException(status_code=400, detail="game_id is required")
+    # Precisamos de pelo menos um ID
+    if not update.game_id and not update.discord_id:
+        raise HTTPException(status_code=400, detail="game_id or discord_id is required")
+
+    game_id = update.game_id
+    discord_id = update.discord_id
+    
+    # Se faltar o discord_id, tentamos buscar na tabela players
+    if not discord_id and game_id:
+        try:
+            query_lookup = "SELECT discordUserID FROM players WHERE playerID = ?"
+            res = await sqlite_service.execute_query(app_id, query_lookup, (game_id,))
+            if res and res[0].get("discordUserID"):
+                discord_id = res[0]["discordUserID"]
+        except Exception:
+            pass
+
+    # O usuário informou que a tabela player_total_hours usa o Discord ID como user_id
+    target_id = discord_id or game_id
 
     if update.operacao == "setar":
         query = "INSERT OR REPLACE INTO player_total_hours (user_id, total_hours) VALUES (?, ?)"

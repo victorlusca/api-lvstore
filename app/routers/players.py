@@ -24,7 +24,7 @@ async def get_all_players(app_id: str):
         COALESCE(h.total_hours, 0) as horas_totais,
         COALESCE(pts.total_points, 0) as pontos
     FROM players p
-    LEFT JOIN player_total_hours h ON p.playerID = h.user_id
+    LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
     LEFT JOIN player_points pts ON p.playerID = pts.game_id
     """
     
@@ -45,7 +45,7 @@ async def get_player_by_id(app_id: str, player_id: int):
         COALESCE(h.total_hours, 0) as horas_totais,
         COALESCE(pts.total_points, 0) as pontos
     FROM players p
-    LEFT JOIN player_total_hours h ON p.playerID = h.user_id
+    LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
     LEFT JOIN player_points pts ON p.playerID = pts.game_id
     WHERE p.id = ?
     """
