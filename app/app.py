@@ -27,7 +27,7 @@ _workdir = os.path.dirname(_data_dir) if os.path.basename(_data_dir).lower() == 
 if os.path.isdir(_workdir):
     os.chdir(_workdir)
 
-_VERSION = "3.0.1"
+_VERSION = "3.0.0"
 _BASE_PATH = os.environ.get("API_BASE_PATH", "/v3").strip() or "/v3"
 if not _BASE_PATH.startswith("/"):
     _BASE_PATH = f"/{_BASE_PATH}"
@@ -85,14 +85,18 @@ def create_app() -> FastAPI:
     from app.routes_players import router as players_router
     from app.routes_ranking import router as ranking_router
     from app.routes_references import router as ref_router
+    from app.routes_squarecloud import router as squarecloud_router
     from app.routes_security import router as security_router
     from app.routes_setup import router as setup_router
     from app.routes_status import router as status_router
+    from app.routes_tasks import router as tasks_router
     from app.routes_warnings import router as warnings_router
 
     for router in (
         setup_router,
+        tasks_router,
         ref_router,
+        squarecloud_router,
         emb_router,
         status_router,
         admin_router,

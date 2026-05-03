@@ -22,6 +22,8 @@ Health:
 - `API_BASE_PATH=/v3`
 - `API_DATA_DIR=` caminho do diretorio `data` (se vazio, tenta `../data`)
 - `API_CORS_ORIGINS=https://lvstore.site,https://www.lvstore.site`
+- `SQUARECLOUD_APP_ID=` id do app na SquareCloud (ex.: `cf3d02a3525c470590d00df4be4e539d`)
+- `SQUARECLOUD_API_TOKEN=` token da API da SquareCloud
 
 ## Publicacao (dominio)
 
@@ -35,3 +37,26 @@ Exemplo com `uvicorn`:
 ```bash
 uvicorn app.app:app --host 0.0.0.0 --port 8000
 ```
+
+## Task System (bots)
+
+Fluxo recomendado:
+
+- site/painel cria task: `POST /v3/tasks` (token API com escopo `tasks:write`)
+- bot faz polling: `GET /v3/tasks/{bot_id}` (token do bot)
+- bot confirma resultado: `POST /v3/tasks/{bot_id}/ack/{task_id}` (token do bot)
+
+Criar identidade de bot:
+
+- `POST /v3/bots/register` com body `{ "bot_id": "azp", "label": "Bot AZP" }`
+- resposta retorna o token do bot (mostrar uma vez)
+
+## Checagem de autonomia
+
+Antes de publicar, rode:
+
+```bash
+python scripts/check_standalone_imports.py
+```
+
+Esse script falha se algum arquivo em `app/` importar modulos externos do bot (ex.: `utils.*`, `commands.*`, `api.*`).

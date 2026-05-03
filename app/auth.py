@@ -1,4 +1,4 @@
-﻿"""
+"""
 auth.py â€” autenticaÃ§Ã£o por token com escopos, proteÃ§Ã£o brute-force e multi-token (FastAPI version).
 
 Escopos:
@@ -21,6 +21,8 @@ ALL_SCOPES = {
     "embeds:read",     "embeds:write",
     "reload:run",      "audit:read",
     "setup:write",     "backup:run",
+    "tasks:read",      "tasks:write",
+    "bots:manage",
     "admin:*",
 }
 
