@@ -1,5 +1,6 @@
 import logging
 from typing import List, Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File
 from fastapi.responses import StreamingResponse
 import io
@@ -46,13 +47,17 @@ async def download_file(app_id: str, filename: str, path: str = Query("/data", d
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
 
+class FileUpdate(BaseModel):
+    content: str
+    path: Optional[str] = None
+
 @router.put("/{app_id}/files/{filename}", dependencies=[Depends(get_api_key)])
-async def update_file(app_id: str, filename: str, file: UploadFile = File(...), path: str = Query("/data", description="Caminho da pasta")):
-    full_path = f"{path.rstrip('/')}/{filename}"
-    audit_log(app_id, "UPDATE_FILE", f"File: {full_path}")
+async def update_file(app_id: str, filename: str, update: FileUpdate, path: str = Query("/data", description="Caminho da pasta")):
+    # Se o path não for enviado no JSON, usa o da query
+    target_path = update.path or f"{path.rstrip('/')}/{filename}"
+    audit_log(app_id, "UPDATE_FILE", f"File: {target_path}")
     
-    content = await file.read()
-    await square_cloud_service.upload_file(app_id, path, content, filename)
+    await square_cloud_service.update_file_content(app_id, target_path, update.content)
     
     return {"ok": True, "message": f"File {filename} updated successfully"}
 

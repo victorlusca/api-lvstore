@@ -52,31 +52,47 @@ class SquareCloudService:
         return data.get("response", [])
 
     async def read_file(self, app_id: str, path: str) -> bytes:
-        # In Square Cloud V2, GET /files with a path to a file returns its content/link
-        endpoint = f"/apps/{app_id}/files"
+        # Square Cloud V2: GET /files/content returns the file content
+        endpoint = f"/apps/{app_id}/files/content"
         params = {"path": self._normalize_path(path)}
         data = await self._request("GET", endpoint, params=params)
         
+        # The API returns the content directly in the response field or via a URL
         response_data = data.get("response", {})
         
-        # If it's a direct content (for small files)
-        if "content" in response_data:
-            content = response_data["content"]
-            if isinstance(content, str):
-                return content.encode("utf-8")
-            return content
+        if isinstance(response_data, dict):
+            # If it's a direct content (for text files)
+            if "content" in response_data:
+                content = response_data["content"]
+                if isinstance(content, str):
+                    return content.encode("utf-8")
+                return content
 
-        # For larger files (like .db), it returns a download URL
-        download_url = response_data.get("url")
-        if download_url:
-            async with httpx.AsyncClient() as client:
-                resp = await client.get(download_url)
-                resp.raise_for_status()
-                return resp.content
+            # If it's a download URL (common for .db files)
+            download_url = response_data.get("url")
+            if download_url:
+                async with httpx.AsyncClient() as client:
+                    resp = await client.get(download_url)
+                    resp.raise_for_status()
+                    return resp.content
         
+        # If response_data is not a dict, it might be the content itself if the API behaves differently
+        if isinstance(response_data, str):
+            return response_data.encode("utf-8")
+            
         return b""
 
+    async def update_file_content(self, app_id: str, path: str, content: str):
+        # Square Cloud V2: PUT /apps/{app_id}/files with JSON payload
+        endpoint = f"/apps/{app_id}/files"
+        payload = {
+            "path": self._normalize_path(path),
+            "content": content
+        }
+        return await self._request("PUT", endpoint, json=payload)
+
     async def upload_file(self, app_id: str, path: str, file_content: bytes, filename: str):
+        # Fallback for binary files if PUT + JSON doesn't support them
         # Square Cloud V2: POST /apps/{app_id}/files
         endpoint = f"/apps/{app_id}/files"
         files = {"file": (filename, file_content)}
