@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 import logging
 
 from app.core.config import settings
-from app.routers import bots, players, ranking
+from app.routers import bots, players, ranking, management
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,6 +31,7 @@ def create_app() -> FastAPI:
     app.include_router(bots.router)
     app.include_router(players.router)
     app.include_router(ranking.router)
+    app.include_router(management.router)
 
     @app.get("/health")
     async def health():
