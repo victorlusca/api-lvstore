@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Body
+from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
 from app.core.security import get_api_key
 from app.services.sqlite_engine import sqlite_service
 from datetime import datetime
@@ -7,6 +9,12 @@ import logging
 from app.core.audit import audit_log
 
 router = APIRouter(prefix="/bots/{app_id}/ranking", tags=["Ranking"])
+
+class RankingUpdate(BaseModel):
+    discord_id: Optional[str] = None
+    game_id: Optional[str] = None
+    operacao: str # 'adicionar' ou 'setar'
+    valor: float
 
 @router.get("/points", dependencies=[Depends(get_api_key)])
 async def get_ranking_points(app_id: str):
@@ -61,5 +69,63 @@ async def get_ranking_inactive(app_id: str):
     ORDER BY h.total_hours DESC
     """
     
-    inactive_players = await sqlite_service.execute_query(app_id, query)
+    inactive_players = await sqlite_service.execute_query(app_id, query)        
     return {"ok": True, "data": inactive_players}
+
+@router.post("/horas", dependencies=[Depends(get_api_key)])
+async def update_ranking_hours(app_id: str, update: RankingUpdate):
+    audit_log(app_id, "UPDATE_RANKING_HOURS", f"Player: {update.game_id} | Op: {update.operacao} | Val: {update.valor}")
+    
+    target_id = update.game_id
+    if not target_id:
+        raise HTTPException(status_code=400, detail="game_id is required")
+
+    if update.operacao == "setar":
+        query = "INSERT OR REPLACE INTO player_total_hours (user_id, total_hours) VALUES (?, ?)"
+        params = (target_id, str(update.valor))
+    else: # adicionar
+        query = """
+        INSERT INTO player_total_hours (user_id, total_hours) 
+        VALUES (?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET total_hours = CAST(total_hours AS REAL) + ?
+        """
+        params = (target_id, str(update.valor), update.valor)
+    
+    await sqlite_service.execute_update(app_id, query, params)
+    return {"ok": True, "message": "Horas atualizadas com sucesso"}
+
+@router.post("/pontos", dependencies=[Depends(get_api_key)])
+async def update_ranking_points(app_id: str, update: RankingUpdate):
+    audit_log(app_id, "UPDATE_RANKING_POINTS", f"Player: {update.game_id} | Op: {update.operacao} | Val: {update.valor}")
+    
+    target_id = update.game_id
+    if not target_id:
+        raise HTTPException(status_code=400, detail="game_id is required")
+
+    if update.operacao == "setar":
+        query = "INSERT OR REPLACE INTO player_points (game_id, total_points, discord_id) VALUES (?, ?, ?)"
+        params = (target_id, int(update.valor), update.discord_id)
+    else: # adicionar
+        query = """
+        INSERT INTO player_points (game_id, total_points, discord_id) 
+        VALUES (?, ?, ?)
+        ON CONFLICT(game_id) DO UPDATE SET total_points = total_points + ?
+        """
+        params = (target_id, int(update.valor), update.discord_id, int(update.valor))
+    
+    await sqlite_service.execute_update(app_id, query, params)
+    return {"ok": True, "message": "Pontos atualizados com sucesso"}
+
+@router.post("/reset-hours", dependencies=[Depends(get_api_key)])
+async def reset_ranking_hours(app_id: str):
+    audit_log(app_id, "RESET_RANKING_HOURS", "Resetting all player hours")
+    query = "UPDATE player_total_hours SET total_hours = '0'"
+    await sqlite_service.execute_update(app_id, query)
+    return {"ok": True, "message": "Todas as horas foram zeradas."}
+
+@router.post("/reset-points", dependencies=[Depends(get_api_key)])
+async def reset_ranking_points(app_id: str):
+    audit_log(app_id, "RESET_RANKING_POINTS", "Resetting all player points")
+    query = "UPDATE player_points SET total_points = 0"
+    await sqlite_service.execute_update(app_id, query)
+    return {"ok": True, "message": "Todos os pontos foram zerados."}
