@@ -61,6 +61,10 @@ class SquareCloudService:
         response_data = data.get("response", {})
         
         if isinstance(response_data, dict):
+            # Check for Buffer format (Node.js style returned by Square Cloud for binary files)
+            if response_data.get("type") == "Buffer" and isinstance(response_data.get("data"), list):
+                return bytes(response_data["data"])
+
             # If it's a direct content (for text files)
             # IMPORTANT: For .db files, the content might be a base64 string or binary
             if "content" in response_data:
