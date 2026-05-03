@@ -52,7 +52,10 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
-        logger.error(f"Global error: {str(exc)}")
+        import traceback
+        error_msg = str(exc)
+        stack_trace = traceback.format_exc()
+        logger.error(f"Global error: {error_msg}\n{stack_trace}")
         
         # Obter a origem da requisição para o CORS
         origin = request.headers.get("origin")
@@ -71,9 +74,19 @@ def create_app() -> FastAPI:
         elif "*" in allowed_origins or not allowed_origins:
             headers["Access-Control-Allow-Origin"] = "*"
 
+        # Incluir detalhes do erro para ajudar no debug do usuário
+        content = {
+            "ok": False, 
+            "error": "Internal Server Error", 
+            "detail": error_msg
+        }
+        
+        if settings.DEBUG:
+            content["traceback"] = stack_trace
+
         return SafeJSONResponse(
             status_code=500,
-            content={"ok": False, "error": "Internal Server Error", "detail": str(exc)},
+            content=content,
             headers=headers
         )
 

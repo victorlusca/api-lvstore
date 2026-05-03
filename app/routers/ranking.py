@@ -96,52 +96,81 @@ async def update_ranking_hours(app_id: str, update: RankingUpdate):
 
 @router.post("/pontos", dependencies=[Depends(get_api_key)])
 async def update_ranking_points(app_id: str, update: RankingUpdate):
-    audit_log(app_id, "UPDATE_RANKING_POINTS", f"Player: {update.game_id} | Op: {update.operacao} | Val: {update.valor}")
+    audit_log(app_id, "UPDATE_RANKING_POINTS", f"Player: {update.game_id} | Discord: {update.discord_id} | Op: {update.operacao} | Val: {update.valor}")
     
-    target_id = update.game_id
-    if not target_id:
-        raise HTTPException(status_code=400, detail="game_id is required")
+    # Precisamos de pelo menos um ID
+    if not update.game_id and not update.discord_id:
+        raise HTTPException(status_code=400, detail="game_id or discord_id is required")
 
-    # Tentamos primeiro o schema mais provável (com game_id e total_points)
-    # Se falhar, tentamos alternativas. 
-    # O discord_id é opcional e pode não existir na tabela.
+    # Tentamos descobrir ambos os IDs para garantir compatibilidade com qualquer schema
+    game_id = update.game_id
+    discord_id = update.discord_id
     
+    # Se faltar um deles, tentamos buscar na tabela players
+    if not game_id or not discord_id:
+        try:
+            if game_id:
+                query_lookup = "SELECT discordUserID FROM players WHERE playerID = ?"
+                res = await sqlite_service.execute_query(app_id, query_lookup, (game_id,))
+                if res and res[0].get("discordUserID"):
+                    discord_id = res[0]["discordUserID"]
+            else: # temos discord_id
+                query_lookup = "SELECT playerID FROM players WHERE discordUserID = ?"
+                res = await sqlite_service.execute_query(app_id, query_lookup, (discord_id,))
+                if res and res[0].get("playerID"):
+                    game_id = res[0]["playerID"]
+        except Exception:
+            pass # Se falhar a busca, continuamos com o que temos
+
     try:
+        # Lógica de atualização resiliente
         if update.operacao == "setar":
-            # Tenta com discord_id primeiro
+            # 1. Tenta INSERT OR REPLACE com game_id (schema novo)
             try:
                 query = "INSERT OR REPLACE INTO player_points (game_id, total_points, discord_id) VALUES (?, ?, ?)"
-                params = (target_id, int(update.valor), update.discord_id)
+                params = (game_id or discord_id, int(update.valor), discord_id or game_id)
                 await sqlite_service.execute_update(app_id, query, params)
             except HTTPException:
-                # Se falhar, tenta sem discord_id
-                query = "INSERT OR REPLACE INTO player_points (game_id, total_points) VALUES (?, ?)"
-                params = (target_id, int(update.valor))
+                # 2. Tenta com discord_id (schema antigo)
+                query = "INSERT OR REPLACE INTO player_points (discord_id, total_points) VALUES (?, ?)"
+                params = (discord_id or game_id, int(update.valor))
                 await sqlite_service.execute_update(app_id, query, params)
         else: # adicionar
             try:
+                # Tenta o ON CONFLICT com game_id
                 query = """
                 INSERT INTO player_points (game_id, total_points, discord_id) 
                 VALUES (?, ?, ?)
                 ON CONFLICT(game_id) DO UPDATE SET total_points = total_points + ?
                 """
-                params = (target_id, int(update.valor), update.discord_id, int(update.valor))
+                params = (game_id or discord_id, int(update.valor), discord_id or game_id, int(update.valor))
                 await sqlite_service.execute_update(app_id, query, params)
             except HTTPException:
-                # Se falhar (ex: discord_id não existe ou conflito não é game_id)
-                # Tenta o update manual mais seguro
-                query_update = "UPDATE player_points SET total_points = total_points + ? WHERE game_id = ?"
-                # Se o update não afetar nada, inserimos
-                # Mas execute_update não retorna rows afetadas facilmente sem mudar muito o código
-                # Então usamos INSERT OR IGNORE + UPDATE
-                query_insert = "INSERT OR IGNORE INTO player_points (game_id, total_points) VALUES (?, 0)"
-                await sqlite_service.execute_update(app_id, query_insert, (target_id,))
-                await sqlite_service.execute_update(app_id, query_update, (int(update.valor), target_id))
+                try:
+                    # Tenta o ON CONFLICT com discord_id
+                    query = """
+                    INSERT INTO player_points (discord_id, total_points) 
+                    VALUES (?, ?)
+                    ON CONFLICT(discord_id) DO UPDATE SET total_points = total_points + ?
+                    """
+                    params = (discord_id or game_id, int(update.valor), int(update.valor))
+                    await sqlite_service.execute_update(app_id, query, params)
+                except HTTPException:
+                    # Fallback final: INSERT OR IGNORE + UPDATE manual
+                    # Tenta ambos os campos no WHERE para garantir
+                    key_field = "game_id" if game_id else "discord_id"
+                    key_val = game_id or discord_id
+                    
+                    query_insert = f"INSERT OR IGNORE INTO player_points ({key_field}, total_points) VALUES (?, 0)"
+                    await sqlite_service.execute_update(app_id, query_insert, (key_val,))
+                    
+                    query_update = f"UPDATE player_points SET total_points = total_points + ? WHERE {key_field} = ?"
+                    await sqlite_service.execute_update(app_id, query_update, (int(update.valor), key_val))
                 
         return {"ok": True, "message": "Pontos atualizados com sucesso"}
     except Exception as e:
-        logging.error(f"Erro ao atualizar pontos: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"Erro ao atualizar ranking: {str(e)}")
+        logging.error(f"Erro fatal ao atualizar pontos: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao salvar no banco de dados: {str(e)}")
 
 @router.post("/reset-hours", dependencies=[Depends(get_api_key)])
 async def reset_ranking_hours(app_id: str):

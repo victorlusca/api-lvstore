@@ -103,14 +103,21 @@ class SQLiteService:
             with open(tmp_path, "rb") as f:
                 updated_content = f.read()
             
-            # 5. Sincronizar de volta para Square Cloud usando POST (multipart/form-data)
-            # Isso é muito mais eficiente para arquivos binários como .db
-            await square_cloud_service.upload_file(
-                app_id=app_id, 
-                path=self.remote_path, 
-                file_content=updated_content, 
-                filename=self.db_filename
-            )
+            # 5. Sincronizar de volta para Square Cloud
+            # Revertendo para o método original que usava PUT + Buffer (lista de ints)
+            # pois o POST pode estar falhando se o arquivo já existir ou se o formato multipart for diferente
+            try:
+                buffer_data = list(updated_content)
+                await square_cloud_service.update_file_content(app_id, full_remote_path, buffer_data)
+            except Exception as e:
+                logger.error(f"Error uploading to Square Cloud: {str(e)}")
+                # Se falhar o PUT, tentamos o POST como fallback
+                await square_cloud_service.upload_file(
+                    app_id=app_id, 
+                    path=self.remote_path, 
+                    file_content=updated_content, 
+                    filename=self.db_filename
+                )
             
             return True
         finally:
