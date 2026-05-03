@@ -37,27 +37,36 @@ class SquareCloudService:
                 logger.error(f"An error occurred: {str(e)}")
                 raise HTTPException(status_code=500, detail=f"Internal error connecting to Square Cloud: {str(e)}")
 
-    async def list_files(self, app_id: str, path: str = "/") -> List[Dict[str, Any]]:
-        endpoint = f"/apps/{app_id}/files/list"
-        params = {"path": path}
+    def _normalize_path(self, path: str) -> str:
+        # Square Cloud V2 usually expects paths without leading slash for some operations
+        # and 'path' instead of '/path'
+        path = path.strip()
+        if path.startswith("/"):
+            path = path[1:]
+        return path
+
+    async def list_files(self, app_id: str, path: str = "") -> List[Dict[str, Any]]:
+        endpoint = f"/apps/{app_id}/files"
+        params = {"path": self._normalize_path(path)}
         data = await self._request("GET", endpoint, params=params)
         return data.get("response", [])
 
     async def read_file(self, app_id: str, path: str) -> bytes:
-        endpoint = f"/apps/{app_id}/files/read"
-        params = {"path": path}
+        # In Square Cloud V2, GET /files with a path to a file returns its content/link
+        endpoint = f"/apps/{app_id}/files"
+        params = {"path": self._normalize_path(path)}
         data = await self._request("GET", endpoint, params=params)
         
         response_data = data.get("response", {})
         
-        # If it's a direct content
+        # If it's a direct content (for small files)
         if "content" in response_data:
             content = response_data["content"]
             if isinstance(content, str):
                 return content.encode("utf-8")
             return content
 
-        # If it's a download URL
+        # For larger files (like .db), it returns a download URL
         download_url = response_data.get("url")
         if download_url:
             async with httpx.AsyncClient() as client:
@@ -68,17 +77,16 @@ class SquareCloudService:
         return b""
 
     async def upload_file(self, app_id: str, path: str, file_content: bytes, filename: str):
-        # Square Cloud Upload uses multipart/form-data
-        endpoint = f"/apps/{app_id}/files/upload"
+        # Square Cloud V2: POST /apps/{app_id}/files
+        endpoint = f"/apps/{app_id}/files"
         files = {"file": (filename, file_content)}
-        # The path is usually passed in the body or as a parameter
-        # According to some docs, it's a POST with 'file' and optional 'path'
-        data = {"path": path} 
+        data = {"path": self._normalize_path(path)} 
         return await self._request("POST", endpoint, files=files, data=data)
 
     async def delete_file(self, app_id: str, path: str):
-        endpoint = f"/apps/{app_id}/files/delete"
-        params = {"path": path}
+        # Square Cloud V2: DELETE /apps/{app_id}/files?path=...
+        endpoint = f"/apps/{app_id}/files"
+        params = {"path": self._normalize_path(path)}
         return await self._request("DELETE", endpoint, params=params)
 
 square_cloud_service = SquareCloudService()
