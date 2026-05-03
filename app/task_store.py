@@ -63,7 +63,11 @@ def _ensure_schema() -> None:
         con.close()
 
 
-_ensure_schema()
+try:
+    _ensure_schema()
+except sqlite3.OperationalError:
+    # Evita falha de startup quando o storage local nao estiver disponivel.
+    pass
 
 
 def _hash_token(token: str) -> str:

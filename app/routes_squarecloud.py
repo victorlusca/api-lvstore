@@ -14,11 +14,11 @@ from app.responses import ok
 router = APIRouter(tags=["SquareCloud"])
 
 
-def _squarecloud_config() -> tuple[str, str]:
-    app_id = os.environ.get("SQUARECLOUD_APP_ID", "").strip()
+def _squarecloud_config(app_id: Optional[str]) -> tuple[str, str]:
+    app_id = (app_id or "").strip() or os.environ.get("SQUARECLOUD_APP_ID", "").strip()
     token = os.environ.get("SQUARECLOUD_API_TOKEN", "").strip()
     if not app_id:
-        raise HTTPException(status_code=500, detail="Variavel SQUARECLOUD_APP_ID nao configurada")
+        raise HTTPException(status_code=400, detail="Informe o app_id (query) ou configure SQUARECLOUD_APP_ID")
     if not token:
         raise HTTPException(status_code=500, detail="Variavel SQUARECLOUD_API_TOKEN nao configurada")
     return app_id, token
@@ -27,10 +27,11 @@ def _squarecloud_config() -> tuple[str, str]:
 def _request_squarecloud(
     method: str,
     *,
+    app_id: Optional[str] = None,
     path: Optional[str] = None,
     payload: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    app_id, token = _squarecloud_config()
+    app_id, token = _squarecloud_config(app_id)
     base_url = f"https://api.squarecloud.app/v2/apps/{app_id}/files"
     if path:
         qs = parse.urlencode({"path": path})
@@ -65,20 +66,22 @@ def _request_squarecloud(
 
 @router.get("/squarecloud/files")
 async def list_squarecloud_files(
+    app_id: Optional[str] = Query(None, description="ID do app na SquareCloud"),
     path: str = Query("/", description="Caminho remoto para listar, ex: / ou data"),
     _=Depends(require_scope("references:read")),
 ):
-    data = _request_squarecloud("GET", path=path)
+    data = _request_squarecloud("GET", app_id=app_id, path=path)
     res, _status = ok(data)
     return res
 
 
 @router.get("/squarecloud/files/read")
 async def read_squarecloud_file(
+    app_id: Optional[str] = Query(None, description="ID do app na SquareCloud"),
     path: str = Query(..., description="Arquivo remoto para leitura, ex: data/config.json"),
     _=Depends(require_scope("references:read")),
 ):
-    data = _request_squarecloud("GET", path=path)
+    data = _request_squarecloud("GET", app_id=app_id, path=path)
     res, _status = ok(data)
     return res
 
@@ -88,6 +91,7 @@ async def upsert_squarecloud_file(
     body: Dict[str, Any] = Body(..., description='{"path":"data/file.txt","content":"..."}'),
     _=Depends(require_scope("references:write")),
 ):
+    app_id = str(body.get("app_id", "")).strip() or None
     remote_path = str(body.get("path", "")).strip()
     content = body.get("content")
     if not remote_path:
@@ -95,16 +99,21 @@ async def upsert_squarecloud_file(
     if content is None:
         raise HTTPException(status_code=400, detail="Campo 'content' e obrigatorio")
 
-    data = _request_squarecloud("PUT", payload={"path": remote_path, "content": str(content)})
+    data = _request_squarecloud(
+        "PUT",
+        app_id=app_id,
+        payload={"path": remote_path, "content": str(content)},
+    )
     res, _status = ok(data, "Arquivo remoto salvo")
     return res
 
 
 @router.delete("/squarecloud/files")
 async def delete_squarecloud_file(
+    app_id: Optional[str] = Query(None, description="ID do app na SquareCloud"),
     path: str = Query(..., description="Arquivo remoto para remover"),
     _=Depends(require_scope("references:write")),
 ):
-    data = _request_squarecloud("DELETE", path=path)
+    data = _request_squarecloud("DELETE", app_id=app_id, path=path)
     res, _status = ok(data, "Arquivo remoto removido")
     return res

@@ -25,6 +25,12 @@ Health:
 - `SQUARECLOUD_APP_ID=` id do app na SquareCloud (ex.: `cf3d02a3525c470590d00df4be4e539d`)
 - `SQUARECLOUD_API_TOKEN=` token da API da SquareCloud
 
+### Arquivos via SquareCloud (definitivo)
+
+- A API suporta multiplos bots/apps via `app_id` nas rotas `/v3/squarecloud/files*`.
+- Se `app_id` nao for enviado, usa `SQUARECLOUD_APP_ID` como fallback.
+- Fluxo de arquivos remotos usa somente SquareCloud (sem gravar `api_token.txt` local).
+
 ## Publicacao (dominio)
 
 Objetivo final:

@@ -14,7 +14,6 @@ from fastapi import Request, HTTPException, Security, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 _REFERENCE_DB = "data/reference_data.db"
-_TOKEN_FILE   = "data/api_token.txt"
 
 ALL_SCOPES = {
     "references:read", "references:write",
@@ -146,8 +145,6 @@ def generate_token(label: str = "default", scopes: Optional[str] = None) -> str:
         con.commit(); con.close()
     except Exception:
         pass
-    os.makedirs("data", exist_ok=True)
-    open(_TOKEN_FILE, "w").write(token)
     return token
 
 def revoke_token(label: str) -> int:
