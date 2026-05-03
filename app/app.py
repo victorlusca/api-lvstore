@@ -27,7 +27,7 @@ _workdir = os.path.dirname(_data_dir) if os.path.basename(_data_dir).lower() == 
 if os.path.isdir(_workdir):
     os.chdir(_workdir)
 
-_VERSION = "3.0.0"
+_VERSION = "3.0.1"
 _BASE_PATH = os.environ.get("API_BASE_PATH", "/v3").strip() or "/v3"
 if not _BASE_PATH.startswith("/"):
     _BASE_PATH = f"/{_BASE_PATH}"
