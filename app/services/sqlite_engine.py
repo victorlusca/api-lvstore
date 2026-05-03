@@ -79,25 +79,38 @@ class SQLiteService:
             # 3. Executar Update
             conn = self._get_connection(tmp_path)
             cursor = conn.cursor()
-            cursor.execute(query, params)
-            conn.commit()
-            conn.close()
+            try:
+                cursor.execute(query, params)
+                conn.commit()
+                conn.close()
+            except sqlite3.OperationalError as e:
+                conn.close()
+                logger.error(f"SQLite Operational Error during update: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Erro na execução do SQL (Update): {str(e)}"
+                )
+            except Exception as e:
+                if conn:
+                    conn.close()
+                logger.error(f"General SQLite Error during update: {str(e)}")
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Erro inesperado no banco de dados: {str(e)}"
+                )
             
-            # 4. Ler arquivo atualizado e converter para lista de bytes (Buffer format da Square Cloud)
+            # 4. Ler arquivo atualizado
             with open(tmp_path, "rb") as f:
                 updated_content = f.read()
             
-            # A Square Cloud V2 aceita o envio de conteúdo via PUT JSON se formatado corretamente.
-            # No entanto, para arquivos .db (binários), o mais seguro é converter para uma lista de bytes
-            # se estivermos usando o endpoint /files com PUT.
-            # De acordo com sua referência: PUT /files com {"path": "...", "content": "..."}
-            
-            # Convertendo bytes para uma lista de inteiros (Buffer) para compatibilidade total
-            buffer_data = list(updated_content)
-            
-            # 5. Sincronizar de volta para Square Cloud usando PUT
-            # Nota: O serviço square_cloud_service.update_file_content foi atualizado para lidar com isso
-            await square_cloud_service.update_file_content(app_id, full_remote_path, buffer_data)
+            # 5. Sincronizar de volta para Square Cloud usando POST (multipart/form-data)
+            # Isso é muito mais eficiente para arquivos binários como .db
+            await square_cloud_service.upload_file(
+                app_id=app_id, 
+                path=self.remote_path, 
+                file_content=updated_content, 
+                filename=self.db_filename
+            )
             
             return True
         finally:

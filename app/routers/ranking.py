@@ -102,19 +102,46 @@ async def update_ranking_points(app_id: str, update: RankingUpdate):
     if not target_id:
         raise HTTPException(status_code=400, detail="game_id is required")
 
-    if update.operacao == "setar":
-        query = "INSERT OR REPLACE INTO player_points (game_id, total_points, discord_id) VALUES (?, ?, ?)"
-        params = (target_id, int(update.valor), update.discord_id)
-    else: # adicionar
-        query = """
-        INSERT INTO player_points (game_id, total_points, discord_id) 
-        VALUES (?, ?, ?)
-        ON CONFLICT(game_id) DO UPDATE SET total_points = total_points + ?
-        """
-        params = (target_id, int(update.valor), update.discord_id, int(update.valor))
+    # Tentamos primeiro o schema mais provável (com game_id e total_points)
+    # Se falhar, tentamos alternativas. 
+    # O discord_id é opcional e pode não existir na tabela.
     
-    await sqlite_service.execute_update(app_id, query, params)
-    return {"ok": True, "message": "Pontos atualizados com sucesso"}
+    try:
+        if update.operacao == "setar":
+            # Tenta com discord_id primeiro
+            try:
+                query = "INSERT OR REPLACE INTO player_points (game_id, total_points, discord_id) VALUES (?, ?, ?)"
+                params = (target_id, int(update.valor), update.discord_id)
+                await sqlite_service.execute_update(app_id, query, params)
+            except HTTPException:
+                # Se falhar, tenta sem discord_id
+                query = "INSERT OR REPLACE INTO player_points (game_id, total_points) VALUES (?, ?)"
+                params = (target_id, int(update.valor))
+                await sqlite_service.execute_update(app_id, query, params)
+        else: # adicionar
+            try:
+                query = """
+                INSERT INTO player_points (game_id, total_points, discord_id) 
+                VALUES (?, ?, ?)
+                ON CONFLICT(game_id) DO UPDATE SET total_points = total_points + ?
+                """
+                params = (target_id, int(update.valor), update.discord_id, int(update.valor))
+                await sqlite_service.execute_update(app_id, query, params)
+            except HTTPException:
+                # Se falhar (ex: discord_id não existe ou conflito não é game_id)
+                # Tenta o update manual mais seguro
+                query_update = "UPDATE player_points SET total_points = total_points + ? WHERE game_id = ?"
+                # Se o update não afetar nada, inserimos
+                # Mas execute_update não retorna rows afetadas facilmente sem mudar muito o código
+                # Então usamos INSERT OR IGNORE + UPDATE
+                query_insert = "INSERT OR IGNORE INTO player_points (game_id, total_points) VALUES (?, 0)"
+                await sqlite_service.execute_update(app_id, query_insert, (target_id,))
+                await sqlite_service.execute_update(app_id, query_update, (int(update.valor), target_id))
+                
+        return {"ok": True, "message": "Pontos atualizados com sucesso"}
+    except Exception as e:
+        logging.error(f"Erro ao atualizar pontos: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Erro ao atualizar ranking: {str(e)}")
 
 @router.post("/reset-hours", dependencies=[Depends(get_api_key)])
 async def reset_ranking_hours(app_id: str):

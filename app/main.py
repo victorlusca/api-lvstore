@@ -23,7 +23,13 @@ def create_app() -> FastAPI:
     # CORS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"], # Adjust in production if needed
+        allow_origins=[
+            "https://meusitedeteste.squareweb.app",
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "https://lvstore.site",
+            "https://www.lvstore.site",
+        ],
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -47,9 +53,28 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         logger.error(f"Global error: {str(exc)}")
+        
+        # Obter a origem da requisição para o CORS
+        origin = request.headers.get("origin")
+        allowed_origins = [
+            "https://meusitedeteste.squareweb.app",
+            "http://localhost:5173",
+            "http://localhost:3000",
+            "https://lvstore.site",
+            "https://www.lvstore.site",
+        ]
+        
+        headers = {}
+        if origin in allowed_origins:
+            headers["Access-Control-Allow-Origin"] = origin
+            headers["Access-Control-Allow-Credentials"] = "true"
+        elif "*" in allowed_origins or not allowed_origins:
+            headers["Access-Control-Allow-Origin"] = "*"
+
         return SafeJSONResponse(
             status_code=500,
-            content={"ok": False, "error": "Internal Server Error", "detail": str(exc)}
+            content={"ok": False, "error": "Internal Server Error", "detail": str(exc)},
+            headers=headers
         )
 
     return app
