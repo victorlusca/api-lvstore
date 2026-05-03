@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 from typing import List, Optional
 from app.core.security import get_api_key
-from app.services.sqlite_engine import sqlite_service
+from app.services.sqlite_engine import sqlite_service, reference_service
 from app.core.audit import audit_log
 
 router = APIRouter(prefix="/bots/{app_id}/management", tags=["Management"])
@@ -10,8 +10,27 @@ router = APIRouter(prefix="/bots/{app_id}/management", tags=["Management"])
 # --- HIERARQUIA E PROGRESSO ---
 
 @router.get("/hierarchy", dependencies=[Depends(get_api_key)])
+async def get_hierarchy_list(app_id: str):
+    audit_log(app_id, "GET_HIERARCHY_LIST", "Fetching hierarchy roles definition")
+    query = """
+    SELECT 
+        id, 
+        hierarchy_index, 
+        cargo_id, 
+        nome, 
+        sigla, 
+        horas, 
+        is_superior, 
+        is_active 
+    FROM hierarquia
+    ORDER BY hierarchy_index ASC
+    """
+    data = await reference_service.execute_query(app_id, query)
+    return {"ok": True, "data": data}
+
+@router.get("/hierarchy/progress", dependencies=[Depends(get_api_key)])
 async def get_hierarchy_progress(app_id: str):
-    audit_log(app_id, "GET_HIERARCHY", "Fetching player hierarchy progress")
+    audit_log(app_id, "GET_HIERARCHY_PROGRESS", "Fetching player hierarchy progress")
     query = """
     SELECT 
         p.playerName as nome,

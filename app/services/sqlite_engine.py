@@ -125,4 +125,5 @@ class SQLiteService:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
 
-sqlite_service = SQLiteService()
+sqlite_service = SQLiteService(db_filename="master_data.db")
+reference_service = SQLiteService(db_filename="reference_data.db")
