@@ -55,27 +55,33 @@ async def get_player_by_id(app_id: str, player_id: int):
         
     return {"ok": True, "data": results[0]}
 
+class PlayerCreate(BaseModel):
+    nome: str
+    login: str
+    game_id: str
+    discord_id: str
+
 @router.post("/", dependencies=[Depends(get_api_key)])
-async def create_player(app_id: str, player_data: dict = Body(...)):
-    audit_log(app_id, "CREATE_PLAYER", f"Data: {player_data}")
+async def create_player(app_id: str, player: PlayerCreate):
+    audit_log(app_id, "CREATE_PLAYER", f"Player: {player.nome} ({player.game_id})")
     
     query = """
     INSERT INTO players (playerName, playerLogin, playerID, discordUserID)
     VALUES (?, ?, ?, ?)
     """
     params = (
-        player_data.get("nome"),
-        player_data.get("login"),
-        player_data.get("game_id"),
-        player_data.get("discord_id")
+        player.nome,
+        player.login,
+        player.game_id,
+        player.discord_id
     )
     
     await sqlite_service.execute_update(app_id, query, params)
-    return {"ok": True, "message": "Player created and database updated in Square Cloud"}
+    return {"ok": True, "message": f"Jogador {player.nome} cadastrado com sucesso e banco sincronizado."}
 
 @router.put("/{player_id}", dependencies=[Depends(get_api_key)])
-async def update_player(app_id: str, player_id: int, player_data: dict = Body(...)):
-    audit_log(app_id, "UPDATE_PLAYER", f"Player ID: {player_id}")
+async def update_player(app_id: str, player_id: int, player: PlayerCreate):
+    audit_log(app_id, "UPDATE_PLAYER", f"Player ID: {player_id} | New Data: {player.nome}")
     
     query = """
     UPDATE players 
@@ -83,15 +89,15 @@ async def update_player(app_id: str, player_id: int, player_data: dict = Body(..
     WHERE id = ?
     """
     params = (
-        player_data.get("nome"),
-        player_data.get("login"),
-        player_data.get("game_id"),
-        player_data.get("discord_id"),
+        player.nome,
+        player.login,
+        player.game_id,
+        player.discord_id,
         player_id
     )
     
     await sqlite_service.execute_update(app_id, query, params)
-    return {"ok": True, "message": "Player updated and database synced"}
+    return {"ok": True, "message": f"Jogador ID {player_id} atualizado com sucesso."}
 
 @router.delete("/{player_id}", dependencies=[Depends(get_api_key)])
 async def delete_player(app_id: str, player_id: int):

@@ -89,8 +89,9 @@ class SquareCloudService:
             
         return b""
 
-    async def update_file_content(self, app_id: str, path: str, content: str):
+    async def update_file_content(self, app_id: str, path: str, content: Any):
         # Square Cloud V2: PUT /apps/{app_id}/files with JSON payload
+        # content can be a string (text) or a list of ints (binary Buffer)
         endpoint = f"/apps/{app_id}/files"
         payload = {
             "path": self._normalize_path(path),

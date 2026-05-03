@@ -82,12 +82,21 @@ class SQLiteService:
             conn.commit()
             conn.close()
             
-            # 4. Ler arquivo atualizado
+            # 4. Ler arquivo atualizado e converter para lista de bytes (Buffer format da Square Cloud)
             with open(tmp_path, "rb") as f:
                 updated_content = f.read()
             
-            # 5. Upload de volta para Square Cloud
-            await square_cloud_service.upload_file(app_id, self.remote_path, updated_content, self.db_filename)
+            # A Square Cloud V2 aceita o envio de conteúdo via PUT JSON se formatado corretamente.
+            # No entanto, para arquivos .db (binários), o mais seguro é converter para uma lista de bytes
+            # se estivermos usando o endpoint /files com PUT.
+            # De acordo com sua referência: PUT /files com {"path": "...", "content": "..."}
+            
+            # Convertendo bytes para uma lista de inteiros (Buffer) para compatibilidade total
+            buffer_data = list(updated_content)
+            
+            # 5. Sincronizar de volta para Square Cloud usando PUT
+            # Nota: O serviço square_cloud_service.update_file_content foi atualizado para lidar com isso
+            await square_cloud_service.update_file_content(app_id, full_remote_path, buffer_data)
             
             return True
         finally:
