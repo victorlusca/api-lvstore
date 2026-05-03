@@ -9,13 +9,9 @@ from datetime import datetime
 from app.core.security import get_api_key
 from app.services.square_cloud import square_cloud_service
 
-router = APIRouter(prefix="/bots", tags=["Bots"])
-logger = logging.getLogger("audit")
+from app.core.audit import audit_log
 
-def audit_log(app_id: str, action: str, details: str):
-    timestamp = datetime.now().isoformat()
-    logger.info(f"[{timestamp}] Bot: {app_id} | Action: {action} | Details: {details}")
-    print(f"AUDIT: [{timestamp}] Bot: {app_id} | Action: {action} | Details: {details}")
+router = APIRouter(prefix="/bots", tags=["Bots"])
 
 @router.get("/{app_id}/files", dependencies=[Depends(get_api_key)])
 async def list_files(app_id: str, path: str = Query("/", description="Caminho da pasta")):
