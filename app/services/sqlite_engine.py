@@ -39,12 +39,22 @@ class SQLiteService:
             # 3. Executar Query
             conn = self._get_connection(tmp_path)
             cursor = conn.cursor()
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            conn.close()
             
-            # Converter Row para Dict
-            return [dict(row) for row in rows]
+            try:
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                conn.close()
+                return [dict(row) for row in rows]
+            except sqlite3.OperationalError as e:
+                # Se der erro de tabela não encontrada, vamos listar as tabelas para debug
+                cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
+                tables = [row['name'] for row in cursor.fetchall()]
+                conn.close()
+                logger.error(f"SQLite Error: {str(e)}. Available tables: {tables}")
+                raise HTTPException(
+                    status_code=500, 
+                    detail=f"Erro no banco: {str(e)}. Tabelas encontradas: {tables}. Tamanho do DB: {len(content)} bytes"
+                )
         finally:
             # Limpar arquivo temporário
             if os.path.exists(tmp_path):

@@ -62,8 +62,11 @@ class SquareCloudService:
         
         if isinstance(response_data, dict):
             # If it's a direct content (for text files)
+            # IMPORTANT: For .db files, the content might be a base64 string or binary
             if "content" in response_data:
                 content = response_data["content"]
+                # Se for uma string, pode ser o conteúdo de um arquivo de texto
+                # Mas se for um .db, a Square Cloud costuma enviar via URL.
                 if isinstance(content, str):
                     return content.encode("utf-8")
                 return content
