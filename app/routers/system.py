@@ -1,9 +1,15 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Body
+from pydantic import BaseModel
+from typing import List, Optional, Dict, Any
 from app.core.security import get_api_key
-from app.services.sqlite_engine import sqlite_service
+from app.services.sqlite_engine import sqlite_service, reference_service
 from app.core.audit import audit_log
 
 router = APIRouter(prefix="/bots/{app_id}/system", tags=["System"])
+
+class KVUpdate(BaseModel):
+    key_name: str
+    value: str
 
 # --- EDITAL E TRANSCRIPTS ---
 
@@ -15,15 +21,75 @@ async def get_transcripts(app_id: str):
         id, 
         channel_id, 
         opened_by_id, 
+        attended_by_id,
+        closed_by_id,
         ticket_type, 
+        transcript_filename,
         transcript_url, 
-        opened_at_ts as data_abertura 
+        stars,
+        opened_at_ts,
+        attended_at_ts,
+        closed_at_ts
     FROM tickets 
     WHERE transcript_url IS NOT NULL 
     ORDER BY id DESC
     """
     data = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
+
+# --- CONFIGURAÇÕES (REFERENCE_DATA.DB) ---
+
+@router.get("/settings/{table}", dependencies=[Depends(get_api_key)])
+async def get_reference_settings(app_id: str, table: str):
+    allowed_tables = {
+        "cargos_gerais", "categorias_gerais", "chats_gerais", 
+        "configuracoes_e_numeros", "configuracoes_organizacao", 
+        "configuracoes_plano", "configuracoes_servidor"
+    }
+    if table not in allowed_tables:
+        raise HTTPException(status_code=404, detail="Configuração não encontrada")
+    
+    audit_log(app_id, "GET_SETTINGS", f"Fetching settings from {table}")
+    query = f"SELECT * FROM {table}"
+    data = await reference_service.execute_query(app_id, query)
+    return {"ok": True, "data": data}
+
+@router.put("/settings/{table}/kv", dependencies=[Depends(get_api_key)])
+async def update_kv_settings(app_id: str, table: str, update: KVUpdate):
+    kv_tables = {"cargos_gerais", "categorias_gerais", "chats_gerais"}
+    if table not in kv_tables:
+        raise HTTPException(status_code=400, detail="Esta tabela não é do tipo Chave-Valor")
+    
+    audit_log(app_id, "UPDATE_SETTINGS_KV", f"Updating {table}: {update.key_name}")
+    query = f"UPDATE {table} SET value = ? WHERE key_name = ?"
+    await reference_service.execute_update(app_id, query, (update.value, update.key_name))
+    return {"ok": True, "message": "Configuração atualizada"}
+
+@router.put("/settings/{table}/row", dependencies=[Depends(get_api_key)])
+async def update_row_settings(app_id: str, table: str, data: Dict[str, Any]):
+    row_tables = {
+        "configuracoes_e_numeros", "configuracoes_organizacao", 
+        "configuracoes_plano", "configuracoes_servidor"
+    }
+    if table not in row_tables:
+        raise HTTPException(status_code=400, detail="Esta tabela não é do tipo Linha Única")
+    
+    audit_log(app_id, "UPDATE_SETTINGS_ROW", f"Updating settings row in {table}")
+    
+    # Construir query dinamicamente para os campos enviados
+    fields = []
+    params = []
+    for k, v in data.items():
+        if k != "id": # Não atualizamos o ID
+            fields.append(f"{k} = ?")
+            params.append(v)
+    
+    if not fields:
+        raise HTTPException(status_code=400, detail="Nenhum campo para atualizar")
+    
+    query = f"UPDATE {table} SET {', '.join(fields)} WHERE id = 1"
+    await reference_service.execute_update(app_id, query, tuple(params))
+    return {"ok": True, "message": "Configurações atualizadas"}
 
 # --- SEGURANÇA ---
 
