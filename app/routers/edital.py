@@ -8,20 +8,20 @@ from app.core.audit import audit_log
 router = APIRouter(prefix="/bots/{app_id}/edital", tags=["Edital"])
 
 class OptionCreate(BaseModel):
-    option_text: str
-    is_correct: bool = False
+    texto: str
+    correta: bool = False
 
 class QuestionCreate(BaseModel):
-    question_text: str
+    pergunta: str
     options: Optional[List[OptionCreate]] = None
 
 class OptionUpdate(BaseModel):
     id: Optional[int] = None
-    option_text: str
-    is_correct: bool
+    texto: str
+    correta: bool
 
 class QuestionUpdate(BaseModel):
-    question_text: str
+    pergunta: str
     options: Optional[List[OptionUpdate]] = None
 
 # --- EDITAL NORMAL ---
@@ -59,15 +59,14 @@ async def get_edital_normal(app_id: str):
 
 @router.post("/normal/perguntas", dependencies=[Depends(get_api_key)])
 async def create_edital_normal_question(app_id: str, question: QuestionCreate):
-    audit_log(app_id, "CREATE_EDITAL_NORMAL", f"New question: {question.question_text[:50]}...")
+    audit_log(app_id, "CREATE_EDITAL_NORMAL", f"New question: {question.pergunta[:50]}...")
     
     # 1. Inserir a pergunta
     query_q = "INSERT INTO recruitment_questions (question_text) VALUES (?)"
-    await reference_service.execute_update(app_id, query_q, (question.question_text,))
+    await reference_service.execute_update(app_id, query_q, (question.pergunta,))
     
-    # Pegar o ID da pergunta recém criada (no SQLite local do service, isso é chato, mas o service sincroniza)
-    # Como o execute_update não retorna o ID, vamos buscar pela última pergunta com esse texto
-    res = await reference_service.execute_query(app_id, "SELECT id FROM recruitment_questions WHERE question_text = ? ORDER BY id DESC LIMIT 1", (question.question_text,))
+    # Pegar o ID da pergunta recém criada
+    res = await reference_service.execute_query(app_id, "SELECT id FROM recruitment_questions WHERE question_text = ? ORDER BY id DESC LIMIT 1", (question.pergunta,))
     if not res:
         raise HTTPException(status_code=500, detail="Erro ao recuperar ID da pergunta criada")
     
@@ -77,7 +76,7 @@ async def create_edital_normal_question(app_id: str, question: QuestionCreate):
     if question.options:
         for opt in question.options:
             query_o = "INSERT INTO recruitment_question_options (question_id, option_text, is_correct) VALUES (?, ?, ?)"
-            await reference_service.execute_update(app_id, query_o, (question_id, opt.option_text, 1 if opt.is_correct else 0))
+            await reference_service.execute_update(app_id, query_o, (question_id, opt.texto, 1 if opt.correta else 0))
             
     return {"ok": True, "message": "Pergunta e alternativas criadas com sucesso", "id": question_id}
 
@@ -86,16 +85,14 @@ async def update_edital_normal_question(app_id: str, qid: int, question: Questio
     audit_log(app_id, "UPDATE_EDITAL_NORMAL", f"Updating question ID: {qid}")
     
     # 1. Atualizar texto da pergunta
-    await reference_service.execute_update(app_id, "UPDATE recruitment_questions SET question_text = ? WHERE id = ?", (question.question_text, qid))
+    await reference_service.execute_update(app_id, "UPDATE recruitment_questions SET question_text = ? WHERE id = ?", (question.pergunta, qid))
     
     # 2. Atualizar alternativas
     if question.options is not None:
-        # Por simplicidade e segurança de integridade, vamos remover as antigas e inserir as novas
-        # se o usuário enviou a lista completa
         await reference_service.execute_update(app_id, "DELETE FROM recruitment_question_options WHERE question_id = ?", (qid,))
         for opt in question.options:
             query_o = "INSERT INTO recruitment_question_options (question_id, option_text, is_correct) VALUES (?, ?, ?)"
-            await reference_service.execute_update(app_id, query_o, (qid, opt.option_text, 1 if opt.is_correct else 0))
+            await reference_service.execute_update(app_id, query_o, (qid, opt.texto, 1 if opt.correta else 0))
             
     return {"ok": True, "message": "Pergunta atualizada com sucesso"}
 
@@ -114,20 +111,20 @@ async def get_edital_superior(app_id: str):
     audit_log(app_id, "GET_EDITAL_SUPERIOR", "Fetching superior application questions")
     query = "SELECT id, question_text FROM superior_application_questions ORDER BY id ASC"
     data = await reference_service.execute_query(app_id, query)
-    return {"ok": True, "data": data}
+    return {"ok": True, "data": [{"id": d["id"], "pergunta": d["question_text"]} for d in data]}
 
 @router.post("/superior/perguntas", dependencies=[Depends(get_api_key)])
 async def create_edital_superior_question(app_id: str, question: QuestionCreate):
-    audit_log(app_id, "CREATE_EDITAL_SUPERIOR", f"New superior question: {question.question_text[:50]}...")
+    audit_log(app_id, "CREATE_EDITAL_SUPERIOR", f"New superior question: {question.pergunta[:50]}...")
     query = "INSERT INTO superior_application_questions (question_text) VALUES (?)"
-    await reference_service.execute_update(app_id, query, (question.question_text,))
+    await reference_service.execute_update(app_id, query, (question.pergunta,))
     return {"ok": True, "message": "Pergunta de edital superior criada"}
 
 @router.put("/superior/perguntas/{qid}", dependencies=[Depends(get_api_key)])
 async def update_edital_superior_question(app_id: str, qid: int, question: QuestionCreate):
     audit_log(app_id, "UPDATE_EDITAL_SUPERIOR", f"Updating superior question ID: {qid}")
     query = "UPDATE superior_application_questions SET question_text = ? WHERE id = ?"
-    await reference_service.execute_update(app_id, query, (question.question_text, qid))
+    await reference_service.execute_update(app_id, query, (question.pergunta, qid))
     return {"ok": True, "message": "Pergunta de edital superior atualizada"}
 
 @router.delete("/superior/perguntas/{qid}", dependencies=[Depends(get_api_key)])

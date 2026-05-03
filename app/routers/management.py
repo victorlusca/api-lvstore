@@ -7,6 +7,15 @@ from app.core.audit import audit_log
 
 router = APIRouter(prefix="/bots/{app_id}/management", tags=["Management"])
 
+class HierarchyUpdate(BaseModel):
+    hierarchy_index: int
+    cargo_id: int
+    nome: str
+    sigla: str
+    horas: int
+    is_superior: int
+    is_active: int
+
 # --- HIERARQUIA E PROGRESSO ---
 
 @router.get("/hierarchy", dependencies=[Depends(get_api_key)])
@@ -27,6 +36,42 @@ async def get_hierarchy_list(app_id: str):
     """
     data = await reference_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
+
+@router.put("/hierarchy/{item_id}", dependencies=[Depends(get_api_key)])
+async def update_hierarchy_item(app_id: str, item_id: int, item: HierarchyUpdate):
+    audit_log(app_id, "UPDATE_HIERARCHY", f"Updating hierarchy item ID: {item_id}")
+    query = """
+    UPDATE hierarquia SET 
+        hierarchy_index = ?, 
+        cargo_id = ?, 
+        nome = ?, 
+        sigla = ?, 
+        horas = ?, 
+        is_superior = ?, 
+        is_active = ?
+    WHERE id = ?
+    """
+    params = (
+        item.hierarchy_index, item.cargo_id, item.nome, 
+        item.sigla, item.horas, item.is_superior, 
+        item.is_active, item_id
+    )
+    await reference_service.execute_update(app_id, query, params)
+    return {"ok": True, "message": "Item da hierarquia atualizado"}
+
+@router.post("/hierarchy", dependencies=[Depends(get_api_key)])
+async def create_hierarchy_item(app_id: str, item: HierarchyUpdate):
+    audit_log(app_id, "CREATE_HIERARCHY", f"Creating hierarchy item: {item.nome}")
+    query = """
+    INSERT INTO hierarquia (hierarchy_index, cargo_id, nome, sigla, horas, is_superior, is_active)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+    """
+    params = (
+        item.hierarchy_index, item.cargo_id, item.nome, 
+        item.sigla, item.horas, item.is_superior, item.is_active
+    )
+    await reference_service.execute_update(app_id, query, params)
+    return {"ok": True, "message": "Item da hierarquia criado"}
 
 @router.get("/hierarchy/progress", dependencies=[Depends(get_api_key)])
 async def get_hierarchy_progress(app_id: str):

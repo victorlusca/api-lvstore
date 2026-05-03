@@ -37,6 +37,12 @@ async def get_transcripts(app_id: str):
     data = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
 
+@router.post("/transcripts", dependencies=[Depends(get_api_key)])
+async def sync_transcripts(app_id: str):
+    audit_log(app_id, "SYNC_TRANSCRIPTS", "Transcript sync requested")
+    # Este endpoint pode ser usado para forçar uma atualização ou processamento
+    return {"ok": True, "message": "Sincronização de transcripts iniciada"}
+
 # --- CONFIGURAÇÕES (REFERENCE_DATA.DB) ---
 
 @router.get("/settings/{table}", dependencies=[Depends(get_api_key)])
@@ -44,7 +50,8 @@ async def get_reference_settings(app_id: str, table: str):
     allowed_tables = {
         "cargos_gerais", "categorias_gerais", "chats_gerais", 
         "configuracoes_e_numeros", "configuracoes_organizacao", 
-        "configuracoes_plano", "configuracoes_servidor"
+        "configuracoes_plano", "configuracoes_servidor",
+        "logs", "calls"
     }
     if table not in allowed_tables:
         raise HTTPException(status_code=404, detail="Configuração não encontrada")
