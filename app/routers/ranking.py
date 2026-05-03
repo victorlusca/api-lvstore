@@ -95,6 +95,22 @@ async def get_ranking_inactive(app_id: str):
     inactive_players = await sqlite_service.execute_query(app_id, query)        
     return {"ok": True, "data": inactive_players}
 
+@router.get("/supervisors", dependencies=[Depends(get_api_key)])
+async def get_ranking_supervisors(app_id: str):
+    audit_log(app_id, "GET_RANKING_SUPERVISORS", "Fetching supervisor actions ranking")
+    query = """
+    SELECT 
+        s.*,
+        p.playerName as nome,
+        p.playerLogin as login,
+        p.playerID as game_id
+    FROM staff_actions_summary s
+    LEFT JOIN players p ON s.discord_user_id = p.discordUserID
+    ORDER BY s.pontos_totais DESC
+    """
+    data = await sqlite_service.execute_query(app_id, query)
+    return {"ok": True, "data": data}
+
 @router.post("/horas", dependencies=[Depends(get_api_key)])
 async def update_ranking_hours(app_id: str, update: RankingUpdate):
     audit_log(app_id, "UPDATE_RANKING_HOURS", f"Player: {update.game_id} | Discord: {update.discord_id} | Op: {update.operacao} | Val: {update.valor}")

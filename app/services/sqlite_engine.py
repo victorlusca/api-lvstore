@@ -127,3 +127,4 @@ class SQLiteService:
 
 sqlite_service = SQLiteService(db_filename="master_data.db")
 reference_service = SQLiteService(db_filename="reference_data.db")
+embed_service = SQLiteService(db_filename="embed_data.db")

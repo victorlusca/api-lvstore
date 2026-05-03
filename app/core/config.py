@@ -8,8 +8,8 @@ class Settings(BaseSettings):
         extra="ignore"
     )
 
-    APP_NAME: str = "LV Store API"
-    VERSION: str = "3.1.0"
+    APP_NAME: str = "API Oficial da ™LV Store"
+    VERSION: str = "3.1.1"
     DEBUG: bool = Field(False, validation_alias="API_DEBUG")
     
     # Square Cloud

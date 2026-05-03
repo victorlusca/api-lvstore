@@ -50,13 +50,13 @@ async def get_all_warnings(app_id: str):
     audit_log(app_id, "GET_WARNINGS", "Fetching all player warnings")
     query = """
     SELECT 
+        w.*,
         p.playerName as nome,
-        p.playerID as game_id,
-        w.adv_tipo as tipo,
-        w.motivo,
-        w.expires_at as expira_em
+        p.playerLogin as login,
+        p.playerID as game_id
     FROM player_warnings w
-    JOIN players p ON w.user_id_save = p.playerID
+    LEFT JOIN players p ON w.user_id_save = p.discordUserID
+    ORDER BY w.id DESC
     """
     data = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
@@ -68,13 +68,13 @@ async def get_all_absences(app_id: str):
     audit_log(app_id, "GET_ABSENCES", "Fetching all player absences")
     query = """
     SELECT 
+        a.*,
         p.playerName as nome,
-        p.playerID as game_id,
-        a.reason as motivo,
-        a.send_at as enviada_em,
-        a.expires_at as expira_em
+        p.playerLogin as login,
+        p.playerID as game_id
     FROM player_absences a
-    JOIN players p ON a.user_id_save = p.playerID
+    LEFT JOIN players p ON a.user_id_save = p.discordUserID
+    ORDER BY a.id DESC
     """
     data = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
@@ -84,14 +84,31 @@ async def get_all_absences(app_id: str):
 @router.get("/routes/daily", dependencies=[Depends(get_api_key)])
 async def get_daily_routes(app_id: str):
     audit_log(app_id, "GET_DAILY_ROUTES", "Fetching daily routes")
-    query = "SELECT * FROM daily_routes"
+    query = """
+    SELECT 
+        d.*,
+        p.playerName as nome,
+        p.playerLogin as login,
+        p.playerID as game_id
+    FROM daily_routes d
+    LEFT JOIN players p ON d.user_id = p.discordUserID
+    """
     data = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
 
 @router.get("/routes/total", dependencies=[Depends(get_api_key)])
 async def get_total_routes(app_id: str):
     audit_log(app_id, "GET_TOTAL_ROUTES", "Fetching total routes summary")
-    query = "SELECT * FROM total_routes"
+    query = """
+    SELECT 
+        t.*,
+        p.playerName as nome,
+        p.playerLogin as login,
+        p.playerID as game_id
+    FROM total_routes t
+    LEFT JOIN players p ON t.user_id = p.discordUserID
+    ORDER BY t.total_routes DESC
+    """
     data = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
 
@@ -100,14 +117,15 @@ async def get_total_routes(app_id: str):
 @router.get("/supervisors/ranking", dependencies=[Depends(get_api_key)])
 async def get_supervisors_ranking(app_id: str):
     audit_log(app_id, "GET_SUPERVISORS_RANKING", "Fetching supervisor ranking")
-    # Baseado nas tabelas supervisor_profiles e supervisor_checkins
     query = """
     SELECT 
-        sp.discordUserID as discord_id,
-        (SELECT COUNT(*) FROM supervisor_checkins sc WHERE sc.playerID = sp.discordUserID) as total_checkins,
-        sp.about_me as sobre
-    FROM supervisor_profiles sp
-    ORDER BY total_checkins DESC
+        s.*,
+        p.playerName as nome,
+        p.playerLogin as login,
+        p.playerID as game_id
+    FROM staff_actions_summary s
+    LEFT JOIN players p ON s.discord_user_id = p.discordUserID
+    ORDER BY s.pontos_totais DESC
     """
     data = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
