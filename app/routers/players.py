@@ -10,7 +10,7 @@ from app.core.audit import audit_log
 
 router = APIRouter(prefix="/bots/{app_id}/players", tags=["Players"])
 
-@router.get("/", dependencies=[Depends(get_api_key)])
+@router.get("", dependencies=[Depends(get_api_key)])
 async def get_all_players(app_id: str):
     audit_log(app_id, "GET_PLAYERS", "Fetching all players with hours and points")
     
@@ -62,7 +62,7 @@ class PlayerCreate(BaseModel):
     game_id: str
     discord_id: str
 
-@router.post("/", dependencies=[Depends(get_api_key)])
+@router.post("", dependencies=[Depends(get_api_key)])
 async def create_player(app_id: str, player: PlayerCreate):
     audit_log(app_id, "CREATE_PLAYER", f"Player: {player.nome} ({player.game_id})")
     
