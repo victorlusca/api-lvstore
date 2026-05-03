@@ -17,7 +17,7 @@ async def get_ranking(app_id: str):
         p.playerName as nome,
         COALESCE(pts.total_points, 0) as pontos
     FROM players p
-    LEFT JOIN player_points pts ON p.playerID = pts.playerID
+    LEFT JOIN player_points pts ON p.playerID = pts.game_id
     ORDER BY pontos DESC
     LIMIT 10
     """
