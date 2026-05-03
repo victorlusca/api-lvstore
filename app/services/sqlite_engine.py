@@ -19,12 +19,16 @@ class SQLiteService:
         return conn
 
     async def execute_query(self, app_id: str, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
-        full_remote_path = f"{self.remote_path}/{self.db_filename}"
+        # Garante que o caminho seja 'data/master_data.db' sem barras duplicadas ou iniciais
+        full_remote_path = f"{self.remote_path.strip('/')}/{self.db_filename.strip('/')}"
         
         # 1. Baixar o arquivo .db
-        content = await square_cloud_service.read_file(app_id, full_remote_path)
-        if not content:
-            raise HTTPException(status_code=404, detail=f"Database {self.db_filename} not found in {app_id}")
+        try:
+            content = await square_cloud_service.read_file(app_id, full_remote_path)
+        except HTTPException as e:
+            if e.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Database {full_remote_path} not found in {app_id}")
+            raise e
 
         # 2. Salvar temporariamente
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
@@ -47,12 +51,16 @@ class SQLiteService:
                 os.remove(tmp_path)
 
     async def execute_update(self, app_id: str, query: str, params: tuple = ()):
-        full_remote_path = f"{self.remote_path}/{self.db_filename}"
+        # Garante que o caminho seja 'data/master_data.db' sem barras duplicadas ou iniciais
+        full_remote_path = f"{self.remote_path.strip('/')}/{self.db_filename.strip('/')}"
         
         # 1. Baixar o arquivo .db
-        content = await square_cloud_service.read_file(app_id, full_remote_path)
-        if not content:
-            raise HTTPException(status_code=404, detail=f"Database {self.db_filename} not found in {app_id}")
+        try:
+            content = await square_cloud_service.read_file(app_id, full_remote_path)
+        except HTTPException as e:
+            if e.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Database {full_remote_path} not found in {app_id}")
+            raise e
 
         # 2. Salvar temporariamente
         with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as tmp:
