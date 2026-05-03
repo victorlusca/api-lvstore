@@ -46,14 +46,26 @@ class SQLiteService:
                 conn.close()
                 return [dict(row) for row in rows]
             except sqlite3.OperationalError as e:
-                # Se der erro de tabela não encontrada, vamos listar as tabelas para debug
+                # Se der erro, vamos listar tabelas e colunas das tabelas principais para debug
                 cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
                 tables = [row['name'] for row in cursor.fetchall()]
+                
+                schema_info = {}
+                for t in ['players', 'player_total_hours', 'player_points']:
+                    if t in tables:
+                        cursor.execute(f"PRAGMA table_info({t});")
+                        schema_info[t] = [row['name'] for row in cursor.fetchall()]
+                
                 conn.close()
-                logger.error(f"SQLite Error: {str(e)}. Available tables: {tables}")
+                logger.error(f"SQLite Error: {str(e)}. Schema: {schema_info}")
                 raise HTTPException(
                     status_code=500, 
-                    detail=f"Erro no banco: {str(e)}. Tabelas encontradas: {tables}. Tamanho do DB: {len(content)} bytes"
+                    detail={
+                        "error": str(e),
+                        "found_tables": tables,
+                        "schema_debug": schema_info,
+                        "db_size": f"{len(content)} bytes"
+                    }
                 )
         finally:
             # Limpar arquivo temporário
