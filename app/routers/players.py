@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
+from pydantic import BaseModel
 from typing import List, Optional
 from app.core.security import get_api_key
 from app.services.sqlite_engine import sqlite_service
