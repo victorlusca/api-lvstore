@@ -1,4 +1,4 @@
-﻿"""
+"""
 FastAPI app factory for api.lvstore.site.
 """
 import os
@@ -6,6 +6,7 @@ import sys
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from app.responses import SafeJSONResponse
 
 from app.audit import clear_request_context, set_request_context
 
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
         docs_url=f"{_BASE_PATH}/docs" if os.environ.get("API_DEBUG") == "1" else None,
         openapi_url=f"{_BASE_PATH}/openapi.json",
         redoc_url=None,
+        default_response_class=SafeJSONResponse,
     )
 
     cors_origins = os.environ.get("API_CORS_ORIGINS", "").strip()
@@ -121,7 +123,7 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(HTTPException)
     async def custom_http_exception_handler(request: Request, exc: HTTPException):
-        return JSONResponse(status_code=exc.status_code, content={"ok": False, "error": exc.detail})
+        return SafeJSONResponse(status_code=exc.status_code, content={"ok": False, "error": exc.detail})
 
     return app
 

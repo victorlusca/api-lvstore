@@ -5,6 +5,7 @@ import logging
 from typing import List, Dict, Any, Optional
 from app.services.square_cloud import square_cloud_service
 from fastapi import HTTPException
+from app.responses import json_safe_data
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class SQLiteService:
                 cursor.execute(query, params)
                 rows = cursor.fetchall()
                 conn.close()
-                return [dict(row) for row in rows]
+                return [json_safe_data(dict(row)) for row in rows]
             except sqlite3.OperationalError as e:
                 conn.close()
                 logger.error(f"SQLite Operational Error: {str(e)}")

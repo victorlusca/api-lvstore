@@ -5,6 +5,7 @@ import logging
 
 from app.core.config import settings
 from app.routers import bots, players, ranking, management, system
+from app.responses import SafeJSONResponse
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -16,6 +17,7 @@ def create_app() -> FastAPI:
         version=settings.VERSION,
         docs_url="/docs" if settings.DEBUG else None,
         redoc_url=None,
+        default_response_class=SafeJSONResponse,
     )
 
     # CORS
@@ -45,7 +47,7 @@ def create_app() -> FastAPI:
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception):
         logger.error(f"Global error: {str(exc)}")
-        return JSONResponse(
+        return SafeJSONResponse(
             status_code=500,
             content={"ok": False, "error": "Internal Server Error", "detail": str(exc)}
         )
