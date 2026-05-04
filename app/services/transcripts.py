@@ -16,13 +16,14 @@ class TranscriptService:
         
         data = []
         for obj in paginated_objects:
-            # A API costuma retornar 'key' ou 'name' para o caminho do arquivo
-            file_key = obj.get("key") or obj.get("name")
+            # A API v1 usa 'id' para o caminho completo do arquivo
+            file_key = obj.get("id") or obj.get("key") or obj.get("name")
             if not file_key:
                 continue
                 
-            # Extrair o nome amigável (sem o prefixo 'transcripts/' e sem o sufixo '-ex30.html')
-            display_name = file_key.replace("transcripts/", "").replace("-ex30.html", "").replace(".html", "")
+            # Extrair o nome amigável
+            # Ex: "app_id/transcripts/nome-ex30.html" -> "nome"
+            display_name = file_key.split("/")[-1].replace("-ex30.html", "").replace(".html", "")
             
             data.append({
                 "name": display_name,

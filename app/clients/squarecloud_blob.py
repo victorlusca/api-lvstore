@@ -15,7 +15,11 @@ class SquareCloudBlobClient:
         self.max_retries = 3
 
     def get_blob_url(self, app_id: str, transcript_filename: str) -> str:
-        # Se o nome já vier com .html, não adicionamos -ex30.html
+        # Se o filename já contém o app_id (formato do 'id' da API v1)
+        if app_id in transcript_filename:
+            return f"{self.base_url}/{transcript_filename}"
+            
+        # Fallback para o formato antigo
         if transcript_filename.endswith(".html"):
             return f"{self.base_url}/{app_id}/{transcript_filename}"
         return f"{self.base_url}/{app_id}/transcripts/{transcript_filename}-ex30.html"
@@ -30,8 +34,13 @@ class SquareCloudBlobClient:
                     response = await client.get(url, headers=headers)
                     response.raise_for_status()
                     data = response.json()
-                    # A API retorna uma lista de objetos diretamente ou dentro de uma chave
-                    return data if isinstance(data, list) else data.get("objects", [])
+                    
+                    # A API retorna no formato {"status": "success", "response": {"objects": [...]}}
+                    if isinstance(data, dict):
+                        inner_response = data.get("response", {})
+                        if isinstance(inner_response, dict):
+                            return inner_response.get("objects", [])
+                    return []
                 except Exception as exc:
                     if attempt == self.max_retries - 1:
                         logger.error(f"Failed to list objects from Square Cloud: {exc}")
