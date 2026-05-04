@@ -1,6 +1,7 @@
 import httpx
 import asyncio
 import logging
+from typing import List, Dict, Any, Optional
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
