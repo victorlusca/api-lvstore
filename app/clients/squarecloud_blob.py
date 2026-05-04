@@ -15,13 +15,16 @@ class SquareCloudBlobClient:
         self.max_retries = 3
 
     def get_blob_url(self, app_id: str, transcript_filename: str) -> str:
-        # Se o filename já contém o app_id (formato do 'id' da API v1)
-        if app_id in transcript_filename:
+        # Se o filename já for um caminho completo (contém "/" e termina em .html)
+        # Ex: "404a6c.../transcripts/nome.html"
+        if "/" in transcript_filename and transcript_filename.endswith(".html"):
             return f"{self.base_url}/{transcript_filename}"
             
-        # Fallback para o formato antigo
+        # Fallback para o formato antigo ou apenas o nome do arquivo
         if transcript_filename.endswith(".html"):
             return f"{self.base_url}/{app_id}/{transcript_filename}"
+        
+        # Caso seja apenas o nome base sem extensão
         return f"{self.base_url}/{app_id}/transcripts/{transcript_filename}-ex30.html"
 
     async def list_objects(self, prefix: str = "transcripts") -> List[Dict[str, Any]]:
