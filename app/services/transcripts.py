@@ -6,13 +6,27 @@ import httpx
 
 class TranscriptService:
     async def list_transcripts(self, app_id: str, page: int, limit: int) -> Dict[str, Any]:
-        records = await transcript_repository.get_transcripts(app_id, page, limit)
+        # 1. Buscar objetos diretamente da Blob API
+        objects = await squarecloud_blob_client.list_objects(prefix="transcripts")
+        
+        # 2. Paginação manual da lista de objetos
+        start = (page - 1) * limit
+        end = start + limit
+        paginated_objects = objects[start:end]
         
         data = []
-        for rec in records:
+        for obj in paginated_objects:
+            # A API costuma retornar 'key' ou 'name' para o caminho do arquivo
+            file_key = obj.get("key") or obj.get("name")
+            if not file_key:
+                continue
+                
+            # Extrair o nome amigável (sem o prefixo 'transcripts/' e sem o sufixo '-ex30.html')
+            display_name = file_key.replace("transcripts/", "").replace("-ex30.html", "").replace(".html", "")
+            
             data.append({
-                "name": rec["transcript_name"],
-                "blob_url": squarecloud_blob_client.get_blob_url(app_id, rec["transcript_filename"])
+                "name": display_name,
+                "blob_url": squarecloud_blob_client.get_blob_url(app_id, file_key)
             })
             
         return {
