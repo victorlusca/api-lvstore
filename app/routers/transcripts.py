@@ -2,21 +2,22 @@ from fastapi import APIRouter, Query, Depends
 from app.schemas.transcripts import TranscriptListResponse, TranscriptDetailResponse
 from app.services.transcripts import transcript_service
 
-router = APIRouter(prefix="/transcripts", tags=["transcripts"])
+router = APIRouter(prefix="/bots", tags=["transcripts"])
 
-@router.get("", response_model=TranscriptListResponse)
+@router.get("/{app_id}/transcripts", response_model=TranscriptListResponse)
 async def list_transcripts(
+    app_id: str,
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100)
 ):
     """
     Listagem de transcripts paginada (sem conteúdo HTML).
     """
-    return await transcript_service.list_transcripts(page, limit)
+    return await transcript_service.list_transcripts(app_id, page, limit)
 
-@router.get("/{name}", response_model=TranscriptDetailResponse)
-async def get_transcript(name: str):
+@router.get("/{app_id}/transcripts/{name}", response_model=TranscriptDetailResponse)
+async def get_transcript(app_id: str, name: str):
     """
     Busca transcript detalhado com conteúdo HTML completo.
     """
-    return await transcript_service.get_transcript_detail(name)
+    return await transcript_service.get_transcript_detail(app_id, name)

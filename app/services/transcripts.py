@@ -5,14 +5,14 @@ from app.core.exceptions import TranscriptNotFound, BlobExpired, ExternalRequest
 import httpx
 
 class TranscriptService:
-    async def list_transcripts(self, page: int, limit: int) -> Dict[str, Any]:
-        records = await transcript_repository.get_transcripts(page, limit)
+    async def list_transcripts(self, app_id: str, page: int, limit: int) -> Dict[str, Any]:
+        records = await transcript_repository.get_transcripts(app_id, page, limit)
         
         data = []
         for rec in records:
             data.append({
                 "name": rec["transcript_name"],
-                "blob_url": squarecloud_blob_client.get_blob_url(rec["transcript_filename"])
+                "blob_url": squarecloud_blob_client.get_blob_url(app_id, rec["transcript_filename"])
             })
             
         return {
@@ -21,17 +21,17 @@ class TranscriptService:
             "data": data
         }
 
-    async def get_transcript_detail(self, name: str) -> Dict[str, Any]:
-        record = await transcript_repository.get_transcript_by_name(name)
+    async def get_transcript_detail(self, app_id: str, name: str) -> Dict[str, Any]:
+        record = await transcript_repository.get_transcript_by_name(app_id, name)
         
         if not record:
             raise TranscriptNotFound()
         
         filename = record["transcript_filename"]
-        blob_url = squarecloud_blob_client.get_blob_url(filename)
+        blob_url = squarecloud_blob_client.get_blob_url(app_id, filename)
         
         try:
-            content = await squarecloud_blob_client.fetch_transcript_html(filename)
+            content = await squarecloud_blob_client.fetch_transcript_html(app_id, filename)
             
             if content == "BLOB_EXPIRED":
                 raise BlobExpired()

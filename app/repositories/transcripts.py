@@ -1,30 +1,17 @@
-import aiosqlite
-import os
 from typing import List, Optional, Dict, Any
+from app.services.sqlite_engine import SQLiteService
+
+sqlite_service = SQLiteService(db_filename="master_data.db", remote_path="data")
 
 class TranscriptRepository:
-    def __init__(self, db_path: str = "data/master_data.db"):
-        self.db_path = db_path
-
-    async def get_transcripts(self, page: int, limit: int) -> List[Dict[str, Any]]:
+    async def get_transcripts(self, app_id: str, page: int, limit: int) -> List[Dict[str, Any]]:
         offset = (page - 1) * limit
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT transcript_name, transcript_filename FROM tickets LIMIT ? OFFSET ?",
-                (limit, offset)
-            ) as cursor:
-                rows = await cursor.fetchall()
-                return [dict(row) for row in rows]
+        query = "SELECT transcript_name, transcript_filename FROM tickets LIMIT ? OFFSET ?"
+        return await sqlite_service.execute_query(app_id, query, (limit, offset))
 
-    async def get_transcript_by_name(self, name: str) -> Optional[Dict[str, Any]]:
-        async with aiosqlite.connect(self.db_path) as db:
-            db.row_factory = aiosqlite.Row
-            async with db.execute(
-                "SELECT transcript_name, transcript_filename FROM tickets WHERE transcript_name = ?",
-                (name,)
-            ) as cursor:
-                row = await cursor.fetchone()
-                return dict(row) if row else None
+    async def get_transcript_by_name(self, app_id: str, name: str) -> Optional[Dict[str, Any]]:
+        query = "SELECT transcript_name, transcript_filename FROM tickets WHERE transcript_name = ?"
+        rows = await sqlite_service.execute_query(app_id, query, (name,))
+        return rows[0] if rows else None
 
 transcript_repository = TranscriptRepository()
