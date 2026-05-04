@@ -37,12 +37,26 @@ class TranscriptService:
         }
 
     async def get_transcript_detail(self, app_id: str, name: str) -> Dict[str, Any]:
+        # 1. Tentar buscar no SQLite primeiro para pegar o transcript_filename original
         record = await transcript_repository.get_transcript_by_name(app_id, name)
         
-        if not record:
+        filename = None
+        if record:
+            filename = record["transcript_filename"]
+        else:
+            # 2. Fallback: Se não achar no banco, tenta listar o blob e ver se o 'name' bate com algum ID
+            # Isso é útil quando o registro ainda não está no banco mas o arquivo já está no blob
+            objects = await squarecloud_blob_client.list_objects(prefix="transcripts")
+            for obj in objects:
+                file_id = obj.get("id") or ""
+                # Se o nome amigável bater com o final do ID do blob
+                if name in file_id:
+                    filename = file_id
+                    break
+        
+        if not filename:
             raise TranscriptNotFound()
         
-        filename = record["transcript_filename"]
         blob_url = squarecloud_blob_client.get_blob_url(app_id, filename)
         
         try:
