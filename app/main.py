@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 import logging
 
 from app.core.config import settings
-from app.routers import bots, players, ranking, management, system, edital, embeds, transcripts
+from app.routers import bots, players, ranking, management, system, edital, embeds
 from app.responses import SafeJSONResponse
 
 # Configure logging
@@ -43,7 +43,6 @@ def create_app() -> FastAPI:
     app.include_router(system.router)
     app.include_router(edital.router)
     app.include_router(embeds.router)
-    app.include_router(transcripts.router)
 
     @app.get("/health")
     async def health():
