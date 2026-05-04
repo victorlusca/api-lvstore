@@ -23,11 +23,10 @@ async def fetch_blob_content(app_id: str, blob_info: Dict[str, Any]) -> Optional
     try:
         content = await blob_service.get_object_content(url)
         if content:
-            # Extrair o nome limpo do transcript (sem prefixo e sem .html)
-            # Ex: transcripts/4ef40e59...html -> 4ef40e59...
-            clean_name = name.split("/")[-1].replace(".html", "")
+            # Mantemos o nome original do blob como ID para garantir o link correto
+            # Se o nome for 'transcripts/file.html', o ID será 'transcripts/file.html'
             return {
-                "transcript_name": clean_name,
+                "transcript_name": name,
                 "content": content,
                 "url": url
             }
@@ -49,10 +48,12 @@ async def list_transcripts(
         # 1. Lista objetos do Blob com prefixo transcripts
         blobs = await blob_service.list_objects(prefix="transcripts")
         
-        # Filtra apenas HTMLs e limita
+        # Filtra apenas HTMLs
         html_blobs = [b for b in blobs if b.get("name", "").endswith(".html")]
-        # Pega os mais recentes (assumindo que o Blob retorna em ordem ou que queremos os últimos da lista)
-        html_blobs = html_blobs[-limit:]
+        
+        # Inverte para pegar os mais recentes primeiro e limita
+        html_blobs.reverse()
+        html_blobs = html_blobs[:limit]
         
         data = []
         if include_content and html_blobs:
@@ -62,9 +63,8 @@ async def list_transcripts(
             data = [r for r in results if r is not None]
         else:
             for b in html_blobs:
-                clean_name = b["name"].split("/")[-1].replace(".html", "")
                 data.append({
-                    "transcript_name": clean_name,
+                    "transcript_name": b["name"],
                     "content": None,
                     "url": b.get("url")
                 })
@@ -74,26 +74,29 @@ async def list_transcripts(
         logger.error(f"Erro ao listar transcripts: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{transcript_id}", dependencies=[Depends(get_api_key)])
-async def get_transcript(app_id: str, transcript_id: str):
+@router.get("/{transcript_path:path}", dependencies=[Depends(get_api_key)])
+async def get_transcript(app_id: str, transcript_path: str):
     """
-    Obtém o conteúdo de um transcript específico pelo ID (nome).
-    Busca primeiro no Blob e complementa com dados do banco se necessário.
+    Obtém o conteúdo de um transcript específico pelo caminho completo (ex: transcripts/id.html).
     """
-    # 1. Tentar encontrar no Blob (precisamos da URL pública)
-    # Como não temos um GET direto por nome no Blob que retorne a URL, 
-    # listamos e filtramos (ou montamos a URL se o padrão for fixo)
-    
-    blobs = await blob_service.list_objects(prefix=f"transcripts/{transcript_id}")
-    target_blob = next((b for b in blobs if transcript_id in b.get("name", "")), None)
+    # 1. Tentar encontrar no Blob
+    # Se o usuário passou apenas o ID, tentamos prefixar com transcripts/ e sufixar com .html
+    search_path = transcript_path
+    if not search_path.startswith("transcripts/"):
+        search_path = f"transcripts/{search_path}"
+    if not search_path.endswith(".html"):
+        search_path = f"{search_path}.html"
+
+    blobs = await blob_service.list_objects(prefix=search_path)
+    target_blob = next((b for b in blobs if b.get("name") == search_path), None)
     
     if not target_blob:
-        # Tenta listar tudo e filtrar (fallback se o prefixo não funcionar como esperado)
+        # Fallback: listar tudo e procurar (mais lento, mas seguro se o prefixo falhar)
         blobs = await blob_service.list_objects(prefix="transcripts")
-        target_blob = next((b for b in blobs if transcript_id in b.get("name", "")), None)
+        target_blob = next((b for b in blobs if b.get("name") == search_path), None)
 
     if not target_blob:
-        raise HTTPException(status_code=404, detail="Transcript não encontrado no Blob Storage")
+        raise HTTPException(status_code=404, detail=f"Transcript '{search_path}' não encontrado no Blob Storage")
 
     content = await blob_service.get_object_content(target_blob["url"])
     
@@ -104,54 +107,51 @@ async def get_transcript(app_id: str, transcript_id: str):
         "status": "ok",
         "data": [
             {
-                "transcript_name": transcript_id,
+                "transcript_name": target_blob["name"],
                 "content": content,
                 "url": target_blob["url"]
             }
         ]
     }
 
-@router.delete("/{transcript_id}", dependencies=[Depends(get_api_key)])
-async def delete_transcript(app_id: str, transcript_id: str):
+@router.delete("/{transcript_path:path}", dependencies=[Depends(get_api_key)])
+async def delete_transcript(app_id: str, transcript_path: str):
     """
     Exclui um transcript do Blob e do banco de dados local.
     """
-    # 1. Identificar o objeto no Blob para deletar
-    # Precisamos do nome completo do objeto (ex: transcripts/id.html)
-    blobs = await blob_service.list_objects(prefix="transcripts")
-    target_blob = next((b for b in blobs if transcript_id in b.get("name", "")), None)
-    
-    blob_deleted = False
-    if target_blob:
-        blob_deleted = await blob_service.delete_object(target_blob["name"])
-    else:
-        logger.warning(f"Transcript {transcript_id} não encontrado no Blob para exclusão")
+    search_path = transcript_path
+    if not search_path.startswith("transcripts/"):
+        search_path = f"transcripts/{search_path}"
+    if not search_path.endswith(".html"):
+        search_path = f"{search_path}.html"
+
+    # 1. Deletar do Blob
+    blob_deleted = await blob_service.delete_object(search_path)
 
     # 2. Excluir do Banco de Dados local (master_data.db)
-    # O usuário informou que o nome pode estar em transcript_filename, transcript_name ou na URL
+    # Pegamos o ID limpo para o banco de dados
+    clean_id = search_path.split("/")[-1].replace(".html", "")
+    
     query = """
     DELETE FROM tickets 
     WHERE transcript_name = ? 
-       OR transcript_filename LIKE ? 
+       OR transcript_filename = ? 
        OR transcript_url LIKE ?
     """
-    pattern = f"%{transcript_id}%"
+    pattern = f"%{clean_id}%"
     
     try:
-        await sqlite_service.execute_update(app_id, query, (transcript_id, pattern, pattern))
+        await sqlite_service.execute_update(app_id, query, (clean_id, search_path, pattern))
         db_deleted = True
     except Exception as e:
         logger.error(f"Erro ao deletar do banco de dados: {str(e)}")
         db_deleted = False
 
-    if not blob_deleted and not db_deleted:
-        raise HTTPException(status_code=404, detail="Não foi possível excluir o transcript de nenhuma fonte")
-
     return {
         "status": "ok",
-        "message": "Transcript excluído com sucesso",
+        "message": "Processo de exclusão finalizado",
         "details": {
-            "blob": "Excluído" if blob_deleted else "Não encontrado/Erro",
-            "database": "Excluído" if db_deleted else "Erro"
+            "blob": "Excluído" if blob_deleted else "Não encontrado ou erro",
+            "database": "Excluído" if db_deleted else "Erro ou não encontrado"
         }
     }
