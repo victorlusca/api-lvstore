@@ -4,9 +4,11 @@ from fastapi.responses import JSONResponse
 import logging
 
 from app.core.config import settings
-from app.routers import bots, players, ranking, management, system, edital, embeds, transcripts
+from app.routers import bots, players, ranking, management, system, edital, embeds, transcripts, audit, security
 from app.core.exceptions import TranscriptException
 from app.responses import SafeJSONResponse
+from app.core.audit import audit_log
+import json
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -36,6 +38,50 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
+    # Middleware de Auditoria AutomÃ¡tica
+    @app.middleware("http")
+    async def auto_audit_middleware(request: Request, call_next):
+        method = request.method
+        path = request.url.path
+        
+        # SÃ³ auditamos alteraÃ§Ãµes (POST, PUT, DELETE)
+        if method in ["POST", "PUT", "DELETE"] and not path.endswith("/audit/bot"):
+            # Tentar extrair app_id do path
+            parts = path.strip("/").split("/")
+            app_id = "unknown"
+            if len(parts) >= 1:
+                if parts[0] == "bots" and len(parts) >= 2:
+                    app_id = parts[1]
+                else:
+                    app_id = parts[0]
+
+            # Para nÃ£o consumir o corpo definitivamente e quebrar os handlers,
+            # usamos o receive do Starlette para re-disponibilizar o corpo
+            body = None
+            if method != "DELETE":
+                try:
+                    body_bytes = await request.body()
+                    if body_bytes:
+                        body = json.loads(body_bytes)
+                    
+                    # Re-injetar o corpo para que o prÃ³ximo handler possa ler
+                    async def receive():
+                        return {"type": "http.request", "body": body_bytes}
+                    request._receive = receive
+                except:
+                    body = "[Binary or unparseable]"
+
+            # Log inicial
+            audit_log(
+                app_id=app_id,
+                action=f"{method}_{path}",
+                details={"path": path, "method": method, "body": body},
+                event_type="AUTO_AUDIT"
+            )
+
+        response = await call_next(request)
+        return response
+
     # Include Routers
     app.include_router(bots.router)
     app.include_router(players.router)
@@ -45,6 +91,8 @@ def create_app() -> FastAPI:
     app.include_router(edital.router)
     app.include_router(embeds.router)
     app.include_router(transcripts.router)
+    app.include_router(audit.router)
+    app.include_router(security.router)
 
     @app.exception_handler(TranscriptException)
     async def transcript_exception_handler(request: Request, exc: TranscriptException):

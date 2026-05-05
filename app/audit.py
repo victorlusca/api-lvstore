@@ -8,8 +8,9 @@ from typing import Any, Optional
 
 from app.settings import data_path
 
-_REFERENCE_DB = data_path("reference_data.db")
+_MASTER_DB = data_path("master_data.db")
 _ctx_actor = contextvars.ContextVar("audit_actor", default="unknown")
+_ctx_actor_id = contextvars.ContextVar("audit_actor_id", default=None)
 _ctx_ip = contextvars.ContextVar("audit_ip", default="unknown")
 _ctx_method = contextvars.ContextVar("audit_method", default="")
 _ctx_route = contextvars.ContextVar("audit_route", default="")
@@ -17,25 +18,33 @@ _ctx_route = contextvars.ContextVar("audit_route", default="")
 
 def _ensure() -> None:
     try:
-        con = sqlite3.connect(_REFERENCE_DB)
+        con = sqlite3.connect(_MASTER_DB)
         con.executescript("""
-            CREATE TABLE IF NOT EXISTS api_audit_log (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
-                ts            TEXT    DEFAULT (datetime('now')),
-                actor         TEXT,
-                ip            TEXT,
-                method        TEXT,
-                route         TEXT,
-                resource_type TEXT,
-                resource_key  TEXT,
-                old_value     TEXT,
-                new_value     TEXT,
-                status        INTEGER,
-                message       TEXT
+            CREATE TABLE IF NOT EXISTS audit_log ( 
+                id INTEGER PRIMARY KEY AUTOINCREMENT, 
+                created_at TEXT DEFAULT (datetime('now')), 
+                event_type TEXT, 
+                system_key TEXT, 
+                action_key TEXT, 
+                actor_discord_id INTEGER, 
+                actor_name TEXT, 
+                target_discord_id INTEGER, 
+                target_game_id INTEGER, 
+                target_name TEXT, 
+                details_json TEXT, 
+                status TEXT, 
+                message TEXT, 
+                guild_id INTEGER, 
+                channel_id INTEGER, 
+                message_id INTEGER, 
+                bot_id INTEGER, 
+                source TEXT, 
+                severity INTEGER, 
+                site_user_id INTEGER 
             );
-            CREATE INDEX IF NOT EXISTS idx_audit_ts   ON api_audit_log(ts);
-            CREATE INDEX IF NOT EXISTS idx_audit_actor ON api_audit_log(actor);
-            CREATE INDEX IF NOT EXISTS idx_audit_res   ON api_audit_log(resource_type, resource_key);
+            CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(created_at);
+            CREATE INDEX IF NOT EXISTS idx_audit_system ON audit_log(system_key);
+            CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action_key);
         """)
         con.commit(); con.close()
     except Exception:
@@ -43,8 +52,9 @@ def _ensure() -> None:
 
 _ensure()
 
-def set_request_context(*, actor: str, ip: str, method: str, route: str) -> None:
+def set_request_context(*, actor: str, ip: str, method: str, route: str, actor_id: Optional[int] = None) -> None:
     _ctx_actor.set(actor or "unknown")
+    _ctx_actor_id.set(actor_id)
     _ctx_ip.set(ip or "unknown")
     _ctx_method.set(method or "")
     _ctx_route.set(route or "")
@@ -52,6 +62,7 @@ def set_request_context(*, actor: str, ip: str, method: str, route: str) -> None
 
 def clear_request_context() -> None:
     _ctx_actor.set("unknown")
+    _ctx_actor_id.set(None)
     _ctx_ip.set("unknown")
     _ctx_method.set("")
     _ctx_route.set("")
@@ -59,38 +70,54 @@ def clear_request_context() -> None:
 
 def write_audit(
     *,
-    status: int,
-    resource_type: str = "",
-    resource_key:  str = "",
-    old_value:     Any = None,
-    new_value:     Any = None,
-    message:       str = "",
+    event_type: str = "API_ACTION",
+    system_key: str = "API",
+    action_key: str = "",
+    actor_discord_id: Optional[int] = None,
+    actor_name: Optional[str] = None,
+    target_discord_id: Optional[int] = None,
+    target_game_id: Optional[int] = None,
+    target_name: Optional[str] = None,
+    details_json: Any = None,
+    status: str = "success",
+    message: str = "",
+    guild_id: Optional[int] = None,
+    channel_id: Optional[int] = None,
+    message_id: Optional[int] = None,
+    bot_id: Optional[int] = None,
+    source: str = "WEB_API",
+    severity: int = 1,
+    site_user_id: Optional[int] = None
 ) -> None:
     """Writes an audit row using request context from middleware."""
     try:
-        actor = _ctx_actor.get()
-        ip = _ctx_ip.get()
-        route = _ctx_route.get()
-        method = _ctx_method.get()
-
+        if not actor_discord_id:
+            actor_discord_id = _ctx_actor_id.get()
+        if not actor_name:
+            actor_name = _ctx_actor.get()
+            
         def _ser(v) -> Optional[str]:
             if v is None: return None
-            if isinstance(v, str): return v[:2000]
-            try: return json.dumps(v, ensure_ascii=False)[:2000]
-            except Exception: return str(v)[:2000]
+            if isinstance(v, str): return v
+            try: return json.dumps(v, ensure_ascii=False)
+            except Exception: return str(v)
 
-        con = sqlite3.connect(_REFERENCE_DB)
+        con = sqlite3.connect(_MASTER_DB)
         con.execute(
-            """INSERT INTO api_audit_log
-               (actor,ip,method,route,resource_type,resource_key,old_value,new_value,status,message)
-               VALUES (?,?,?,?,?,?,?,?,?,?)""",
-            (actor, ip, method, route,
-             resource_type[:128], resource_key[:256],
-             _ser(old_value), _ser(new_value),
-             status, message[:500]),
+            """INSERT INTO audit_log
+               (event_type, system_key, action_key, actor_discord_id, actor_name, 
+                target_discord_id, target_game_id, target_name, details_json, 
+                status, message, guild_id, channel_id, message_id, bot_id, 
+                source, severity, site_user_id)
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (event_type, system_key, action_key, actor_discord_id, actor_name,
+             target_discord_id, target_game_id, target_name, _ser(details_json),
+             status, message, guild_id, channel_id, message_id, bot_id,
+             source, severity, site_user_id),
         )
         con.commit(); con.close()
-    except Exception:
+    except Exception as e:
+        print(f"Error writing audit: {e}")
         pass
 
 
@@ -98,45 +125,46 @@ def read_audit(
     *,
     limit: int = 50,
     offset: int = 0,
-    resource_type: Optional[str] = None,
-    actor: Optional[str] = None,
-    status: Optional[int] = None,
+    system_key: Optional[str] = None,
+    action_key: Optional[str] = None,
+    actor_discord_id: Optional[int] = None,
+    status: Optional[str] = None,
 ) -> list:
-    """LÃª entradas de auditoria com filtros opcionais."""
+    """Lê entradas de auditoria com filtros opcionais."""
     where, params = [], []
-    if resource_type:
-        where.append("resource_type = ?"); params.append(resource_type)
-    if actor:
-        where.append("actor = ?"); params.append(actor)
-    if status is not None:
+    if system_key:
+        where.append("system_key = ?"); params.append(system_key)
+    if action_key:
+        where.append("action_key = ?"); params.append(action_key)
+    if actor_discord_id:
+        where.append("actor_discord_id = ?"); params.append(actor_discord_id)
+    if status:
         where.append("status = ?"); params.append(status)
     clause = ("WHERE " + " AND ".join(where)) if where else ""
     try:
-        con = sqlite3.connect(_REFERENCE_DB)
+        con = sqlite3.connect(_MASTER_DB)
+        con.row_factory = sqlite3.Row
         rows = con.execute(
-            f"SELECT id,ts,actor,ip,method,route,resource_type,resource_key,"
-            f"old_value,new_value,status,message FROM api_audit_log {clause} "
+            f"SELECT * FROM audit_log {clause} "
             f"ORDER BY id DESC LIMIT ? OFFSET ?",
             params + [min(limit, 500), max(offset, 0)],
         ).fetchall()
         con.close()
-        keys = ["id","ts","actor","ip","method","route","resource_type","resource_key",
-                "old_value","new_value","status","message"]
-        return [dict(zip(keys, r)) for r in rows]
+        return [dict(r) for r in rows]
     except Exception:
         return []
 
 
 def audit_stats() -> dict:
-    """Retorna mÃ©tricas simples da auditoria."""
+    """Retorna métricas simples da auditoria."""
     try:
-        con = sqlite3.connect(_REFERENCE_DB)
-        total   = con.execute("SELECT COUNT(1) FROM api_audit_log").fetchone()[0]
-        today   = con.execute("SELECT COUNT(1) FROM api_audit_log WHERE DATE(ts)=DATE('now')").fetchone()[0]
-        errors  = con.execute("SELECT COUNT(1) FROM api_audit_log WHERE status>=400").fetchone()[0]
-        actors  = con.execute("SELECT actor,COUNT(1) FROM api_audit_log GROUP BY actor ORDER BY 2 DESC LIMIT 10").fetchall()
+        con = sqlite3.connect(_MASTER_DB)
+        total   = con.execute("SELECT COUNT(1) FROM audit_log").fetchone()[0]
+        today   = con.execute("SELECT COUNT(1) FROM audit_log WHERE DATE(created_at)=DATE('now')").fetchone()[0]
+        errors  = con.execute("SELECT COUNT(1) FROM audit_log WHERE status != 'success'").fetchone()[0]
+        actors  = con.execute("SELECT actor_name, COUNT(1) FROM audit_log GROUP BY actor_name ORDER BY 2 DESC LIMIT 10").fetchall()
         recent  = con.execute(
-            "SELECT ts,actor,method,route,status FROM api_audit_log ORDER BY id DESC LIMIT 5"
+            "SELECT created_at, actor_name, action_key, status FROM audit_log ORDER BY id DESC LIMIT 5"
         ).fetchall()
         con.close()
         return {
@@ -144,7 +172,7 @@ def audit_stats() -> dict:
             "today": today,
             "errors": errors,
             "by_actor": {r[0]: r[1] for r in actors},
-            "recent": [{"ts":r[0],"actor":r[1],"method":r[2],"route":r[3],"status":r[4]} for r in recent],
+            "recent": [{"ts":r[0],"actor":r[1],"action":r[2],"status":r[3]} for r in recent],
         }
     except Exception:
         return {}
