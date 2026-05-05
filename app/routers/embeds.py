@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 from typing import List, Optional, Dict, Any
-from app.core.security import get_api_key
+from app.auth import require_scope
 from app.services.sqlite_engine import embed_service
 from app.core.audit import audit_log
 from datetime import datetime
@@ -28,35 +28,20 @@ class EmbedUpdate(BaseModel):
     raw_json: Optional[str] = None
     is_active: Optional[int] = 1
 
-@router.get("", dependencies=[Depends(get_api_key)])
+@router.get("", dependencies=[Depends(require_scope("admin:*"))])
 async def get_all_embeds(app_id: str):
-    audit_log(app_id, "GET_EMBEDS", "Fetching all active embeds")
-    query = "SELECT * FROM embeds WHERE is_active=1"
+    audit_log(app_id, "GET_EMBEDS", "Fetching all custom embeds configuration")
+    query = "SELECT id, system_key, embed_key, content, title, type, description, url, timestamp, color FROM embeds ORDER BY system_key ASC, embed_key ASC"
     data = await embed_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
 
-@router.get("/{system_key}", dependencies=[Depends(get_api_key)])
-async def get_system_embeds(app_id: str, system_key: str):
-    audit_log(app_id, "GET_SYSTEM_EMBEDS", f"Fetching embeds for system: {system_key}")
-    query = "SELECT * FROM embeds WHERE system_key = ? AND is_active = 1"
-    data = await embed_service.execute_query(app_id, query, (system_key,))
-    return {"ok": True, "data": data}
-
-@router.post("", dependencies=[Depends(get_api_key)])
-async def create_or_update_embed(app_id: str, embed: EmbedUpdate):
-    audit_log(app_id, "UPSERT_EMBED", f"Saving embed: {embed.system_key}/{embed.embed_key}")
-    
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+@router.put("", dependencies=[Depends(require_scope("admin:*"))])
+async def update_embed(app_id: str, update: EmbedUpdate):
+    audit_log(app_id, "UPDATE_EMBED", f"Updating embed: {update.system_key}:{update.embed_key}")
     
     query = """
-    INSERT INTO embeds (
-        system_key, embed_key, content, title, type, description, url, 
-        timestamp, color, footer_json, image_json, thumbnail_json, 
-        video_json, provider_json, author_json, fields_json, raw_json, 
-        is_active, created_at, updated_at
-    ) VALUES (
-        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-    )
+    INSERT INTO embeds (system_key, embed_key, content, title, type, description, url, timestamp, color)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(system_key, embed_key) DO UPDATE SET
         content = excluded.content,
         title = excluded.title,
@@ -64,26 +49,26 @@ async def create_or_update_embed(app_id: str, embed: EmbedUpdate):
         description = excluded.description,
         url = excluded.url,
         timestamp = excluded.timestamp,
-        color = excluded.color,
-        footer_json = excluded.footer_json,
-        image_json = excluded.image_json,
-        thumbnail_json = excluded.thumbnail_json,
-        video_json = excluded.video_json,
-        provider_json = excluded.provider_json,
-        author_json = excluded.author_json,
-        fields_json = excluded.fields_json,
-        raw_json = excluded.raw_json,
-        is_active = excluded.is_active,
-        updated_at = excluded.updated_at
+        color = excluded.color
     """
     
-    params = (
-        embed.system_key, embed.embed_key, embed.content, embed.title, embed.type,
-        embed.description, embed.url, embed.timestamp, embed.color, 
-        embed.footer_json, embed.image_json, embed.thumbnail_json, 
-        embed.video_json, embed.provider_json, embed.author_json, 
-        embed.fields_json, embed.raw_json, embed.is_active, now, now
-    )
+    await embed_service.execute_update(app_id, query, (
+        update.system_key,
+        update.embed_key,
+        update.content,
+        update.title,
+        update.type,
+        update.description,
+        update.url,
+        update.timestamp,
+        update.color
+    ))
     
-    await embed_service.execute_update(app_id, query, params)
-    return {"ok": True, "message": "Embed salva com sucesso"}
+    return {"ok": True, "message": "Embed atualizada com sucesso"}
+
+@router.delete("/{system_key}/{embed_key}", dependencies=[Depends(require_scope("admin:*"))])
+async def delete_embed(app_id: str, system_key: str, embed_key: str):
+    audit_log(app_id, "DELETE_EMBED", f"Deleting embed: {system_key}:{embed_key}")
+    query = "DELETE FROM embeds WHERE system_key = ? AND embed_key = ?"
+    await embed_service.execute_update(app_id, query, (system_key, embed_key))
+    return {"ok": True, "message": "Embed removida com sucesso"}

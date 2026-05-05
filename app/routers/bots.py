@@ -6,20 +6,20 @@ from fastapi.responses import StreamingResponse
 import io
 from datetime import datetime
 
-from app.core.security import get_api_key
+from app.auth import require_scope
 from app.services.square_cloud import square_cloud_service
 
 from app.core.audit import audit_log
 
 router = APIRouter(prefix="/bots", tags=["Bots"])
 
-@router.get("/{app_id}/files", dependencies=[Depends(get_api_key)])
+@router.get("/{app_id}/files", dependencies=[Depends(require_scope("admin:*"))])
 async def list_files(app_id: str, path: str = Query("/", description="Caminho da pasta")):
     audit_log(app_id, "LIST_FILES", f"Path: {path}")
     files = await square_cloud_service.list_files(app_id, path)
     return {"ok": True, "files": files}
 
-@router.get("/{app_id}/files/db", dependencies=[Depends(get_api_key)])
+@router.get("/{app_id}/files/db", dependencies=[Depends(require_scope("admin:*"))])
 async def list_db_files(app_id: str):
     audit_log(app_id, "LIST_DB_FILES", "Searching for .db files in /data")
     # Usually databases are in /data
@@ -27,7 +27,7 @@ async def list_db_files(app_id: str):
     db_files = [f for f in all_files if f.get("name", "").endswith(".db")]
     return {"ok": True, "files": db_files}
 
-@router.get("/{app_id}/files/{filename}", dependencies=[Depends(get_api_key)])
+@router.get("/{app_id}/files/{filename}", dependencies=[Depends(require_scope("admin:*"))])
 async def download_file(app_id: str, filename: str, path: str = Query("/data", description="Caminho da pasta")):
     full_path = f"{path.rstrip('/')}/{filename}"
     audit_log(app_id, "DOWNLOAD_FILE", f"File: {full_path}")
@@ -47,7 +47,7 @@ class FileUpdate(BaseModel):
     content: str
     path: Optional[str] = None
 
-@router.put("/{app_id}/files/{filename}", dependencies=[Depends(get_api_key)])
+@router.put("/{app_id}/files/{filename}", dependencies=[Depends(require_scope("admin:*"))])
 async def update_file(app_id: str, filename: str, update: FileUpdate, path: str = Query("/data", description="Caminho da pasta")):
     # Se o path não for enviado no JSON, usa o da query
     target_path = update.path or f"{path.rstrip('/')}/{filename}"
@@ -57,7 +57,7 @@ async def update_file(app_id: str, filename: str, update: FileUpdate, path: str 
     
     return {"ok": True, "message": f"File {filename} updated successfully"}
 
-@router.post("/{app_id}/files", dependencies=[Depends(get_api_key)])
+@router.post("/{app_id}/files", dependencies=[Depends(require_scope("admin:*"))])
 async def upload_new_file(app_id: str, file: UploadFile = File(...), path: str = Query("/data", description="Caminho da pasta")):
     filename = file.filename
     audit_log(app_id, "UPLOAD_FILE", f"File: {path}/{filename}")

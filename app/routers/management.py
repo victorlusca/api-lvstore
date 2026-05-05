@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 from typing import List, Optional
-from app.core.security import get_api_key
+from app.auth import require_scope
 from app.services.sqlite_engine import sqlite_service, reference_service
 from app.core.audit import audit_log
 
@@ -18,7 +18,7 @@ class HierarchyUpdate(BaseModel):
 
 # --- HIERARQUIA E PROGRESSO ---
 
-@router.get("/hierarchy", dependencies=[Depends(get_api_key)])
+@router.get("/hierarchy", dependencies=[Depends(require_scope("admin:*"))])
 async def get_hierarchy_list(app_id: str):
     audit_log(app_id, "GET_HIERARCHY_LIST", "Fetching hierarchy roles definition")
     query = """
@@ -37,7 +37,7 @@ async def get_hierarchy_list(app_id: str):
     data = await reference_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
 
-@router.put("/hierarchy/{item_id}", dependencies=[Depends(get_api_key)])
+@router.put("/hierarchy/{item_id}", dependencies=[Depends(require_scope("admin:*"))])
 async def update_hierarchy_item(app_id: str, item_id: int, item: HierarchyUpdate):
     audit_log(app_id, "UPDATE_HIERARCHY", f"Updating hierarchy item ID: {item_id}")
     query = """
@@ -59,7 +59,7 @@ async def update_hierarchy_item(app_id: str, item_id: int, item: HierarchyUpdate
     await reference_service.execute_update(app_id, query, params)
     return {"ok": True, "message": "Item da hierarquia atualizado"}
 
-@router.post("/hierarchy", dependencies=[Depends(get_api_key)])
+@router.post("/hierarchy", dependencies=[Depends(require_scope("admin:*"))])
 async def create_hierarchy_item(app_id: str, item: HierarchyUpdate):
     audit_log(app_id, "CREATE_HIERARCHY", f"Creating hierarchy item: {item.nome}")
     query = """
@@ -73,7 +73,7 @@ async def create_hierarchy_item(app_id: str, item: HierarchyUpdate):
     await reference_service.execute_update(app_id, query, params)
     return {"ok": True, "message": "Item da hierarquia criado"}
 
-@router.get("/hierarchy/progress", dependencies=[Depends(get_api_key)])
+@router.get("/hierarchy/progress", dependencies=[Depends(require_scope("admin:*"))])
 async def get_hierarchy_progress(app_id: str):
     audit_log(app_id, "GET_HIERARCHY_PROGRESS", "Fetching player hierarchy progress")
     query = """
@@ -90,7 +90,7 @@ async def get_hierarchy_progress(app_id: str):
 
 # --- ADVERTÊNCIAS ---
 
-@router.get("/warnings", dependencies=[Depends(get_api_key)])
+@router.get("/warnings", dependencies=[Depends(require_scope("admin:*"))])
 async def get_all_warnings(app_id: str):
     audit_log(app_id, "GET_WARNINGS", "Fetching all player warnings")
     query = """
@@ -108,7 +108,7 @@ async def get_all_warnings(app_id: str):
 
 # --- AUSÊNCIAS ---
 
-@router.get("/absences", dependencies=[Depends(get_api_key)])
+@router.get("/absences", dependencies=[Depends(require_scope("admin:*"))])
 async def get_all_absences(app_id: str):
     audit_log(app_id, "GET_ABSENCES", "Fetching all player absences")
     query = """
@@ -126,7 +126,7 @@ async def get_all_absences(app_id: str):
 
 # --- ROTAS ---
 
-@router.get("/routes/daily", dependencies=[Depends(get_api_key)])
+@router.get("/routes/daily", dependencies=[Depends(require_scope("admin:*"))])
 async def get_daily_routes(app_id: str):
     audit_log(app_id, "GET_DAILY_ROUTES", "Fetching daily routes")
     query = """
@@ -141,7 +141,7 @@ async def get_daily_routes(app_id: str):
     data = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
 
-@router.get("/routes/total", dependencies=[Depends(get_api_key)])
+@router.get("/routes/total", dependencies=[Depends(require_scope("admin:*"))])
 async def get_total_routes(app_id: str):
     audit_log(app_id, "GET_TOTAL_ROUTES", "Fetching total routes summary")
     query = """
@@ -159,7 +159,7 @@ async def get_total_routes(app_id: str):
 
 # --- RANKING DE SUPERIORES ---
 
-@router.get("/supervisors/ranking", dependencies=[Depends(get_api_key)])
+@router.get("/supervisors/ranking", dependencies=[Depends(require_scope("admin:*"))])
 async def get_supervisors_ranking(app_id: str):
     audit_log(app_id, "GET_SUPERVISORS_RANKING", "Fetching supervisor ranking")
     query = """

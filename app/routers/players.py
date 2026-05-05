@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 from typing import List, Optional
-from app.core.security import get_api_key
+from app.auth import require_scope
 from app.services.sqlite_engine import sqlite_service
 from datetime import datetime
 import logging
@@ -10,7 +10,7 @@ from app.core.audit import audit_log
 
 router = APIRouter(prefix="/bots/{app_id}/players", tags=["Players"])
 
-@router.get("", dependencies=[Depends(get_api_key)])
+@router.get("", dependencies=[Depends(require_scope("admin:*"))])
 async def get_all_players(app_id: str):
     audit_log(app_id, "GET_PLAYERS", "Fetching all players with hours and points")
     
@@ -31,7 +31,7 @@ async def get_all_players(app_id: str):
     players = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": players}
 
-@router.get("/{player_id}", dependencies=[Depends(get_api_key)])
+@router.get("/{player_id}", dependencies=[Depends(require_scope("admin:*"))])
 async def get_player_by_id(app_id: str, player_id: int):
     audit_log(app_id, "GET_PLAYER_DETAIL", f"Player ID: {player_id}")
     
@@ -62,7 +62,7 @@ class PlayerCreate(BaseModel):
     game_id: str
     discord_id: str
 
-@router.post("", dependencies=[Depends(get_api_key)])
+@router.post("", dependencies=[Depends(require_scope("admin:*"))])
 async def create_player(app_id: str, player: PlayerCreate):
     audit_log(app_id, "CREATE_PLAYER", f"Player: {player.nome} ({player.game_id})")
     
@@ -80,7 +80,7 @@ async def create_player(app_id: str, player: PlayerCreate):
     await sqlite_service.execute_update(app_id, query, params)
     return {"ok": True, "message": f"Jogador {player.nome} cadastrado com sucesso e banco sincronizado."}
 
-@router.put("/{player_id}", dependencies=[Depends(get_api_key)])
+@router.put("/{player_id}", dependencies=[Depends(require_scope("admin:*"))])
 async def update_player(app_id: str, player_id: int, player: PlayerCreate):
     audit_log(app_id, "UPDATE_PLAYER", f"Player ID: {player_id} | New Data: {player.nome}")
     
@@ -100,7 +100,7 @@ async def update_player(app_id: str, player_id: int, player: PlayerCreate):
     await sqlite_service.execute_update(app_id, query, params)
     return {"ok": True, "message": f"Jogador ID {player_id} atualizado com sucesso."}
 
-@router.delete("/{player_id}", dependencies=[Depends(get_api_key)])
+@router.delete("/{player_id}", dependencies=[Depends(require_scope("admin:*"))])
 async def delete_player(app_id: str, player_id: int):
     audit_log(app_id, "DELETE_PLAYER", f"Player ID: {player_id}")
     

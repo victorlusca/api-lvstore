@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
-from app.core.security import get_api_key
+from app.auth import require_scope
 from app.services.sqlite_engine import sqlite_service
 from datetime import datetime
 import logging
@@ -16,7 +16,7 @@ class RankingUpdate(BaseModel):
     operacao: str # 'adicionar' ou 'setar'
     valor: float
 
-@router.get("/points", dependencies=[Depends(get_api_key)])
+@router.get("/points", dependencies=[Depends(require_scope("admin:*"))])
 async def get_ranking_points(app_id: str):
     audit_log(app_id, "GET_RANKING_POINTS", "Fetching top players by points")
     
@@ -33,7 +33,7 @@ async def get_ranking_points(app_id: str):
     ranking = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": ranking}
 
-@router.get("/total", dependencies=[Depends(get_api_key)])
+@router.get("/total", dependencies=[Depends(require_scope("admin:*"))])
 async def get_ranking_total(app_id: str):
     audit_log(app_id, "GET_RANKING_TOTAL", "Fetching all players by total hours")
     
@@ -52,7 +52,7 @@ async def get_ranking_total(app_id: str):
     ranking = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": ranking}
 
-@router.get("/active", dependencies=[Depends(get_api_key)])
+@router.get("/active", dependencies=[Depends(require_scope("admin:*"))])
 async def get_ranking_active(app_id: str):
     audit_log(app_id, "GET_RANKING_ACTIVE", "Fetching active players (in sessions)")
     
@@ -74,7 +74,7 @@ async def get_ranking_active(app_id: str):
     active_players = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": active_players}
 
-@router.get("/inactive", dependencies=[Depends(get_api_key)])
+@router.get("/inactive", dependencies=[Depends(require_scope("admin:*"))])
 async def get_ranking_inactive(app_id: str):
     audit_log(app_id, "GET_RANKING_INACTIVE", "Fetching inactive players (not in sessions)")
     
@@ -95,7 +95,7 @@ async def get_ranking_inactive(app_id: str):
     inactive_players = await sqlite_service.execute_query(app_id, query)        
     return {"ok": True, "data": inactive_players}
 
-@router.get("/supervisors", dependencies=[Depends(get_api_key)])
+@router.get("/supervisors", dependencies=[Depends(require_scope("admin:*"))])
 async def get_ranking_supervisors(app_id: str):
     audit_log(app_id, "GET_RANKING_SUPERVISORS", "Fetching supervisor actions ranking")
     query = """
@@ -111,7 +111,7 @@ async def get_ranking_supervisors(app_id: str):
     data = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
 
-@router.post("/horas", dependencies=[Depends(get_api_key)])
+@router.post("/horas", dependencies=[Depends(require_scope("admin:*"))])
 async def update_ranking_hours(app_id: str, update: RankingUpdate):
     audit_log(app_id, "UPDATE_RANKING_HOURS", f"Player: {update.game_id} | Discord: {update.discord_id} | Op: {update.operacao} | Val: {update.valor}")
     
@@ -149,7 +149,7 @@ async def update_ranking_hours(app_id: str, update: RankingUpdate):
     await sqlite_service.execute_update(app_id, query, params)
     return {"ok": True, "message": "Horas atualizadas com sucesso"}
 
-@router.post("/pontos", dependencies=[Depends(get_api_key)])
+@router.post("/pontos", dependencies=[Depends(require_scope("admin:*"))])
 async def update_ranking_points(app_id: str, update: RankingUpdate):
     audit_log(app_id, "UPDATE_RANKING_POINTS", f"Player: {update.game_id} | Discord: {update.discord_id} | Op: {update.operacao} | Val: {update.valor}")
     
@@ -209,14 +209,14 @@ async def update_ranking_points(app_id: str, update: RankingUpdate):
         logging.error(f"Erro fatal ao atualizar pontos: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao salvar no banco de dados: {str(e)}")
 
-@router.post("/reset-hours", dependencies=[Depends(get_api_key)])
+@router.post("/reset-hours", dependencies=[Depends(require_scope("admin:*"))])
 async def reset_ranking_hours(app_id: str):
     audit_log(app_id, "RESET_RANKING_HOURS", "Resetting all player hours")
     query = "UPDATE player_total_hours SET total_hours = '0'"
     await sqlite_service.execute_update(app_id, query)
     return {"ok": True, "message": "Todas as horas foram zeradas."}
 
-@router.post("/reset-points", dependencies=[Depends(get_api_key)])
+@router.post("/reset-points", dependencies=[Depends(require_scope("admin:*"))])
 async def reset_ranking_points(app_id: str):
     audit_log(app_id, "RESET_RANKING_POINTS", "Resetting all player points")
     query = "UPDATE player_points SET total_points = 0"

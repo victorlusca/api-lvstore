@@ -13,6 +13,8 @@ from typing import Optional, List, Dict, Any
 from fastapi import Request, HTTPException, Security, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
+from app.core.config import settings
+
 _REFERENCE_DB = "data/reference_data.db"
 
 ALL_SCOPES = {
@@ -89,6 +91,12 @@ async def validate_token(request: Request, auth: HTTPAuthorizationCredentials = 
     _check_bf(ip)
     
     token = auth.credentials
+    
+    # 1. Verificar se Ã© a Master API_KEY do .env
+    if token == settings.API_KEY:
+        return {"label": "master_key", "scopes": ALL_SCOPES}
+
+    # 2. Verificar no banco de dados de tokens dinÃ¢micos
     h = hashlib.sha256(token.encode()).hexdigest()
     
     try:

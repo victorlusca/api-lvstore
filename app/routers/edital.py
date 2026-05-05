@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 from typing import List, Optional
-from app.core.security import get_api_key
+from app.auth import require_scope
 from app.services.sqlite_engine import reference_service
 from app.core.audit import audit_log
 
@@ -26,7 +26,7 @@ class QuestionUpdate(BaseModel):
 
 # --- EDITAL NORMAL ---
 
-@router.get("/normal", dependencies=[Depends(get_api_key)])
+@router.get("/normal", dependencies=[Depends(require_scope("admin:*"))])
 async def get_edital_normal(app_id: str):
     audit_log(app_id, "GET_EDITAL_NORMAL", "Fetching recruitment questions and options")
     
@@ -57,7 +57,7 @@ async def get_edital_normal(app_id: str):
         
     return {"ok": True, "data": data}
 
-@router.post("/normal/perguntas", dependencies=[Depends(get_api_key)])
+@router.post("/normal/perguntas", dependencies=[Depends(require_scope("admin:*"))])
 async def create_edital_normal_question(app_id: str, question: QuestionCreate):
     audit_log(app_id, "CREATE_EDITAL_NORMAL", f"New question: {question.pergunta[:50]}...")
     
@@ -80,7 +80,7 @@ async def create_edital_normal_question(app_id: str, question: QuestionCreate):
             
     return {"ok": True, "message": "Pergunta e alternativas criadas com sucesso", "id": question_id}
 
-@router.put("/normal/perguntas/{qid}", dependencies=[Depends(get_api_key)])
+@router.put("/normal/perguntas/{qid}", dependencies=[Depends(require_scope("admin:*"))])
 async def update_edital_normal_question(app_id: str, qid: int, question: QuestionUpdate):
     audit_log(app_id, "UPDATE_EDITAL_NORMAL", f"Updating question ID: {qid}")
     
@@ -96,7 +96,7 @@ async def update_edital_normal_question(app_id: str, qid: int, question: Questio
             
     return {"ok": True, "message": "Pergunta atualizada com sucesso"}
 
-@router.delete("/normal/perguntas/{qid}", dependencies=[Depends(get_api_key)])
+@router.delete("/normal/perguntas/{qid}", dependencies=[Depends(require_scope("admin:*"))])
 async def delete_edital_normal_question(app_id: str, qid: int):
     audit_log(app_id, "DELETE_EDITAL_NORMAL", f"Deleting question ID: {qid}")
     # O DELETE CASCADE deve cuidar das opções se o banco estiver configurado, mas garantimos manualmente também
@@ -106,28 +106,28 @@ async def delete_edital_normal_question(app_id: str, qid: int):
 
 # --- EDITAL SUPERIOR ---
 
-@router.get("/superior", dependencies=[Depends(get_api_key)])
+@router.get("/superior", dependencies=[Depends(require_scope("admin:*"))])
 async def get_edital_superior(app_id: str):
     audit_log(app_id, "GET_EDITAL_SUPERIOR", "Fetching superior application questions")
     query = "SELECT id, question_text FROM superior_application_questions ORDER BY id ASC"
     data = await reference_service.execute_query(app_id, query)
     return {"ok": True, "data": [{"id": d["id"], "pergunta": d["question_text"]} for d in data]}
 
-@router.post("/superior/perguntas", dependencies=[Depends(get_api_key)])
+@router.post("/superior/perguntas", dependencies=[Depends(require_scope("admin:*"))])
 async def create_edital_superior_question(app_id: str, question: QuestionCreate):
     audit_log(app_id, "CREATE_EDITAL_SUPERIOR", f"New superior question: {question.pergunta[:50]}...")
     query = "INSERT INTO superior_application_questions (question_text) VALUES (?)"
     await reference_service.execute_update(app_id, query, (question.pergunta,))
     return {"ok": True, "message": "Pergunta de edital superior criada"}
 
-@router.put("/superior/perguntas/{qid}", dependencies=[Depends(get_api_key)])
+@router.put("/superior/perguntas/{qid}", dependencies=[Depends(require_scope("admin:*"))])
 async def update_edital_superior_question(app_id: str, qid: int, question: QuestionCreate):
     audit_log(app_id, "UPDATE_EDITAL_SUPERIOR", f"Updating superior question ID: {qid}")
     query = "UPDATE superior_application_questions SET question_text = ? WHERE id = ?"
     await reference_service.execute_update(app_id, query, (question.pergunta, qid))
     return {"ok": True, "message": "Pergunta de edital superior atualizada"}
 
-@router.delete("/superior/perguntas/{qid}", dependencies=[Depends(get_api_key)])
+@router.delete("/superior/perguntas/{qid}", dependencies=[Depends(require_scope("admin:*"))])
 async def delete_edital_superior_question(app_id: str, qid: int):
     audit_log(app_id, "DELETE_EDITAL_SUPERIOR", f"Deleting superior question ID: {qid}")
     query = "DELETE FROM superior_application_questions WHERE id = ?"
