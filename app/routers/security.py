@@ -28,7 +28,7 @@ from app.security.security_whitelist import (
     remove_global_role,
 )
 
-router = APIRouter(tags=["Security"])
+router = APIRouter(prefix="/bots", tags=["Security"])
 
 class ConfigUpdate(BaseModel):
     action_key: str
