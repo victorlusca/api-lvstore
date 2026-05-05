@@ -80,7 +80,7 @@ def create_app() -> FastAPI:
 
     from app.routes_admin import router as admin_router
     from app.routes_advanced import router as advanced_router
-    from app.routes_audit import router as audit_router
+    from app.routers.audit import router as audit_router
     from app.routes_edital import router as edital_router
     from app.routes_embeds import router as emb_router
     from app.routes_operational import router as operational_router
@@ -88,7 +88,7 @@ def create_app() -> FastAPI:
     from app.routes_ranking import router as ranking_router
     from app.routes_references import router as ref_router
     from app.routes_squarecloud import router as squarecloud_router
-    from app.routes_security import router as security_router
+    from app.routers.security import router as security_router
     from app.routes_setup import router as setup_router
     from app.routes_status import router as status_router
     from app.routes_tasks import router as tasks_router
