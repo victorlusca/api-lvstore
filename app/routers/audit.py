@@ -48,12 +48,10 @@ async def get_audit_log(
         offset = 0
 
     try:
-        # No SQLite, bot_id pode estar como TEXT ou INTEGER. 
-        # Usamos CAST para garantir que a comparação funcione independente do tipo na tabela.
+        # A API deve ser um ESPELHO do banco. Listar tudo sem filtros adicionais além de paginação.
         query = """
             SELECT * 
             FROM audit_log 
-            WHERE CAST(bot_id AS TEXT) = CAST(? AS TEXT)
             ORDER BY created_at DESC 
             LIMIT ? OFFSET ?
         """
@@ -61,44 +59,29 @@ async def get_audit_log(
         rows = await sqlite_service.execute_query(
             app_id, 
             query, 
-            (app_id, limit, offset)
+            (limit, offset)
         )
         
         data = []
         for row in rows:
-            # Converte row para dicionário para manipulação
             item = dict(row)
             
-            # Mapeamento obrigatório conforme as regras
-            # created_at -> feito_em
-            # system_key -> nome_sistema
-            # actor_discord_id -> autor
-            # target_discord_id -> alvo
+            # Mapeamento obrigatório de campos
+            item["feito_em"] = item.pop("created_at")
+            item["nome_sistema"] = item.pop("system_key")
+            item["autor"] = item.pop("actor_discord_id")
+            item["alvo"] = item.pop("target_discord_id")
             
-            mapped_item = {}
-            for key, value in item.items():
-                if key == "created_at":
-                    mapped_item["feito_em"] = value
-                elif key == "system_key":
-                    mapped_item["nome_sistema"] = value
-                elif key == "actor_discord_id":
-                    mapped_item["autor"] = value
-                elif key == "target_discord_id":
-                    mapped_item["alvo"] = value
-                else:
-                    mapped_item[key] = value
-            
-            # Parse do campo details_json (OBRIGATÓRIO)
-            details_raw = mapped_item.get("details_json")
+            # Campo details_json: parse se válido, senão string original
+            details_raw = item.get("details_json")
             if details_raw:
                 try:
-                    if isinstance(details_raw, str) and (details_raw.strip().startswith('{') or details_raw.strip().startswith('[')):
-                        mapped_item["details_json"] = json.loads(details_raw)
-                except (json.JSONDecodeError, TypeError):
-                    # Se falhar, mantém como string original (sem quebrar a API)
+                    item["details_json"] = json.loads(details_raw)
+                except Exception:
+                    # Se falhar o parse, mantém a string original sem quebrar a API
                     pass
             
-            data.append(mapped_item)
+            data.append(item)
             
         return {
             "ok": True,
