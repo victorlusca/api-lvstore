@@ -7,7 +7,7 @@ from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from typing import Optional, List, Dict, Any
 from app.auth import require_scope
 from app.responses import ok, err
-from app.helpers import master_con
+from app.services.sqlite_engine import sqlite_service
 
 from pydantic import BaseModel
 
@@ -48,24 +48,20 @@ async def get_audit_log(
         offset = 0
 
     try:
-        con = master_con()
-        
         # Query SQL parametrizada conforme solicitado
         query = """
             SELECT * 
             FROM audit_log 
-            WHERE bot_id = :app_id 
+            WHERE bot_id = ? 
             ORDER BY created_at DESC 
-            LIMIT :limit OFFSET :offset
+            LIMIT ? OFFSET ?
         """
-        params = {
-            "app_id": app_id,
-            "limit": limit,
-            "offset": offset
-        }
-        
-        rows = con.execute(query, params).fetchall()
-        con.close()
+        # Usando o sqlite_service que busca o banco na Square Cloud
+        rows = await sqlite_service.execute_query(
+            app_id, 
+            query, 
+            (app_id, limit, offset)
+        )
         
         data = []
         for row in rows:
@@ -73,16 +69,18 @@ async def get_audit_log(
             item = dict(row)
             
             # Renomeação de campos (OBRIGATÓRIO)
-            item["feito_em"] = item.pop("created_at")
-            item["nome_sistema"] = item.pop("system_key")
-            item["autor"] = item.pop("actor_discord_id")
-            item["alvo"] = item.pop("target_discord_id")
+            # Nota: pop() remove e retorna o valor
+            item["feito_em"] = item.pop("created_at") if "created_at" in item else None
+            item["nome_sistema"] = item.pop("system_key") if "system_key" in item else None
+            item["autor"] = item.pop("actor_discord_id") if "actor_discord_id" in item else None
+            item["alvo"] = item.pop("target_discord_id") if "target_discord_id" in item else None
             
             # Parse do campo details_json
             details_raw = item.get("details_json")
             if details_raw:
                 try:
-                    item["details_json"] = json.loads(details_raw)
+                    if isinstance(details_raw, str):
+                        item["details_json"] = json.loads(details_raw)
                 except (json.JSONDecodeError, TypeError):
                     # Se falhar, mantém como string original
                     item["details_json"] = details_raw
@@ -104,18 +102,42 @@ async def create_bot_audit(
     _ = Depends(require_scope("audit:write"))
 ):
     """
-    Registra um novo evento de auditoria para o bot.
+    Registra um novo evento de auditoria no banco remoto do bot (Square Cloud).
     """
     try:
-        from app.core.audit import audit_log
-        audit_log(
-            app_id=app_id,
-            action=event.action_key,
-            details=event.details or event.message,
-            event_type=event.event_type,
-            status=event.status
+        query = """
+            INSERT INTO audit_log (
+                event_type, system_key, action_key, 
+                actor_discord_id, actor_name, 
+                target_discord_id, target_game_id, target_name, 
+                details_json, status, message, 
+                guild_id, bot_id, source, severity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        
+        details_json = json.dumps(event.details) if event.details else None
+        
+        params = (
+            event.event_type,
+            event.system_key,
+            event.action_key,
+            event.actor_discord_id,
+            event.actor_name,
+            event.target_discord_id,
+            event.target_game_id,
+            event.target_name,
+            details_json,
+            event.status,
+            event.message,
+            event.guild_id,
+            int(app_id) if app_id.isdigit() else None,
+            "api",
+            event.severity
         )
-        res, status_code = ok({"message": "Log registrado com sucesso"})
+        
+        await sqlite_service.execute_update(app_id, query, params)
+        
+        res, status_code = ok({"message": "Log registrado no banco remoto com sucesso"})
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
