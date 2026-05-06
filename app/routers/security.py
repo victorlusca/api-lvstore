@@ -18,6 +18,7 @@ from app.security.security_guard import (
 )
 from app.security.security_whitelist import (
     list_action_whitelist,
+    list_global_whitelist,
     add_user,
     remove_user,
     add_role,
@@ -31,7 +32,8 @@ from app.security.security_whitelist import (
 router = APIRouter(prefix="/bots", tags=["Security"])
 
 class ConfigUpdate(BaseModel):
-    action_key: str
+    action_key: Optional[str] = None
+    system_name: Optional[str] = None
     infraction_limit: int
     punishment_type: str
     is_enabled: int = 1
@@ -64,16 +66,40 @@ async def update_security_config(
     _ = Depends(require_scope("references:write"))
 ):
     try:
+        # Tenta usar action_key ou system_name
+        key = config.action_key or config.system_name
+        if not key:
+            raise HTTPException(status_code=400, detail="É necessário fornecer 'action_key' ou 'system_name'")
+
+        # Validação extra para ajudar o usuário
+        from app.security.security_guard import VALID_PUNISHMENTS, _to_system_name
+        
+        sys_name = _to_system_name(key)
+        if not sys_name:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Chave de ação ou sistema inválida: {key}. Use chaves como 'anti_ban', 'anti_kick', etc."
+            )
+            
+        if config.punishment_type not in VALID_PUNISHMENTS:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Tipo de punição inválido: {config.punishment_type}. Opções: {list(VALID_PUNISHMENTS)}"
+            )
+
         success = upsert_action_config(
-            action_key=config.action_key,
+            action_key=key,
             infraction_limit=config.infraction_limit,
             punishment_type=config.punishment_type,
             is_enabled=config.is_enabled
         )
         if success:
-            res, status = ok({"message": "ConfiguraÃ§Ã£o atualizada com sucesso"})
+            res, status = ok({"message": "Configuração atualizada com sucesso"})
             return res
-        raise Exception("Erro ao atualizar configuraÃ§Ã£o")
+        
+        raise Exception("Falha interna ao salvar no banco de dados")
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -93,11 +119,20 @@ async def update_security_system(
     _ = Depends(require_scope("references:write"))
 ):
     try:
-        success = set_system_state(system.system_name, system.enabled)
+        from app.security.security_guard import _to_system_name
+        sys_name = _to_system_name(system.system_name)
+        if not sys_name:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Sistema inválido: {system.system_name}"
+            )
+
+        success = set_system_state(sys_name, system.enabled)
         if success:
             res, status = ok({"message": "Sistema atualizado com sucesso"})
             return res
-        raise Exception("Erro ao atualizar sistema")
+        raise Exception("Falha ao atualizar estado do sistema no banco")
+    except HTTPException: raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -109,10 +144,24 @@ async def get_security_whitelist(
 ):
     try:
         if not action_key:
-            res, status = ok({})
-            return res
+            from app.security.security_guard import ACTION_KEYS
+            return {"error": False, "message": "Forneça um action_key", "available_keys": ACTION_KEYS}
+            
         users, roles = list_action_whitelist(action_key)
         data = {"action_key": action_key, "users": users, "roles": roles}
+        res, status = ok(data)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{app_id}/security/whitelist/global")
+async def get_global_security_whitelist(
+    app_id: str,
+    _ = Depends(require_scope("references:read"))
+):
+    try:
+        users, roles = list_global_whitelist()
+        data = {"users": users, "roles": roles}
         res, status = ok(data)
         return res
     except Exception as e:
@@ -121,9 +170,12 @@ async def get_security_whitelist(
 @router.post("/{app_id}/security/whitelist/user")
 async def add_whitelist_user(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
     try:
+        if not data.action_key or not data.user_id:
+            raise HTTPException(status_code=400, detail="action_key e user_id são obrigatórios")
         add_user(data.action_key, data.user_id)
-        res, status = ok({"message": "UsuÃ¡rio adicionado Ã  whitelist"})
+        res, status = ok({"message": "Usuário adicionado à whitelist"})
         return res
+    except HTTPException: raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -131,7 +183,7 @@ async def add_whitelist_user(app_id: str, data: WhitelistUpdate, _ = Depends(req
 async def del_whitelist_user(app_id: str, action_key: str, user_id: int, _ = Depends(require_scope("references:write"))):
     try:
         remove_user(action_key, user_id)
-        res, status = ok({"message": "UsuÃ¡rio removido da whitelist"})
+        res, status = ok({"message": "Usuário removido da whitelist"})
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -139,9 +191,12 @@ async def del_whitelist_user(app_id: str, action_key: str, user_id: int, _ = Dep
 @router.post("/{app_id}/security/whitelist/role")
 async def add_whitelist_role(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
     try:
+        if not data.action_key or not data.role_id:
+            raise HTTPException(status_code=400, detail="action_key e role_id são obrigatórios")
         add_role(data.action_key, data.role_id)
-        res, status = ok({"message": "Cargo adicionado Ã  whitelist"})
+        res, status = ok({"message": "Cargo adicionado à whitelist"})
         return res
+    except HTTPException: raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -157,9 +212,12 @@ async def del_whitelist_role(app_id: str, action_key: str, role_id: int, _ = Dep
 @router.post("/{app_id}/security/whitelist/global/user")
 async def add_global_whitelist_user(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
     try:
+        if not data.user_id:
+            raise HTTPException(status_code=400, detail="user_id é obrigatório")
         add_global_user(data.user_id)
-        res, status = ok({"message": "UsuÃ¡rio adicionado Ã  whitelist global"})
+        res, status = ok({"message": "Usuário adicionado à whitelist global"})
         return res
+    except HTTPException: raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -167,7 +225,7 @@ async def add_global_whitelist_user(app_id: str, data: WhitelistUpdate, _ = Depe
 async def del_global_whitelist_user(app_id: str, user_id: int, _ = Depends(require_scope("references:write"))):
     try:
         remove_global_user(user_id)
-        res, status = ok({"message": "UsuÃ¡rio removido da whitelist global"})
+        res, status = ok({"message": "Usuário removido da whitelist global"})
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -175,9 +233,12 @@ async def del_global_whitelist_user(app_id: str, user_id: int, _ = Depends(requi
 @router.post("/{app_id}/security/whitelist/global/role")
 async def add_global_whitelist_role(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
     try:
+        if not data.role_id:
+            raise HTTPException(status_code=400, detail="role_id é obrigatório")
         add_global_role(data.role_id)
-        res, status = ok({"message": "Cargo adicionado Ã  whitelist global"})
+        res, status = ok({"message": "Cargo adicionado à whitelist global"})
         return res
+    except HTTPException: raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
