@@ -26,6 +26,9 @@ class SQLiteService:
         # 1. Baixar o arquivo .db
         try:
             content = await square_cloud_service.read_file(app_id, full_remote_path)
+            if not content or len(content) < 100: # Arquivo SQLite mínimo tem 100 bytes
+                logger.error(f"Arquivo lido da Square Cloud parece inválido ou vazio para {app_id}: {full_remote_path}")
+                return []
         except HTTPException as e:
             if e.status_code == 404:
                 raise HTTPException(status_code=404, detail=f"Database {full_remote_path} not found in {app_id}")

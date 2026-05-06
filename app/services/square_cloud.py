@@ -57,36 +57,33 @@ class SquareCloudService:
         params = {"path": self._normalize_path(path)}
         data = await self._request("GET", endpoint, params=params)
         
-        # The API returns the content directly in the response field or via a URL
+        # A Square Cloud retorna a resposta dentro do campo 'response'
         response_data = data.get("response", {})
         
+        # Se response_data for uma string, pode ser o conteúdo direto (comum em arquivos pequenos/texto)
+        if isinstance(response_data, str):
+            return response_data.encode("utf-8")
+
         if isinstance(response_data, dict):
-            # Check for Buffer format (Node.js style returned by Square Cloud for binary files)
-            if response_data.get("type") == "Buffer" and isinstance(response_data.get("data"), list):
-                return bytes(response_data["data"])
-
-            # If it's a direct content (for text files)
-            # IMPORTANT: For .db files, the content might be a base64 string or binary
-            if "content" in response_data:
-                content = response_data["content"]
-                # Se for uma string, pode ser o conteúdo de um arquivo de texto
-                # Mas se for um .db, a Square Cloud costuma enviar via URL.
-                if isinstance(content, str):
-                    return content.encode("utf-8")
-                return content
-
-            # If it's a download URL (common for .db files)
+            # 1. Caso seja um download URL (mais comum para arquivos grandes como .db)
             download_url = response_data.get("url")
             if download_url:
-                async with httpx.AsyncClient() as client:
+                async with httpx.AsyncClient(timeout=60.0) as client:
                     resp = await client.get(download_url)
                     resp.raise_for_status()
                     return resp.content
+
+            # 2. Caso seja conteúdo direto no campo 'content'
+            if "content" in response_data:
+                content = response_data["content"]
+                if isinstance(content, str):
+                    return content.encode("utf-8")
+                return bytes(content)
+
+            # 3. Caso seja o formato Buffer (Node.js) retornado pela Square Cloud
+            if response_data.get("type") == "Buffer" and isinstance(response_data.get("data"), list):
+                return bytes(response_data["data"])
         
-        # If response_data is not a dict, it might be the content itself if the API behaves differently
-        if isinstance(response_data, str):
-            return response_data.encode("utf-8")
-            
         return b""
 
     async def update_file_content(self, app_id: str, path: str, content: Any):
