@@ -48,11 +48,10 @@ class WhitelistUpdate(BaseModel):
 @router.get("/{app_id}/security/configs")
 async def get_security_configs(
     app_id: str,
-    guild_id: int = Query(..., ge=1),
     _ = Depends(require_scope("references:read"))
 ):
     try:
-        data = list_action_configs(guild_id)
+        data = list_action_configs()
         res, status = ok(data)
         return res
     except Exception as e:
@@ -61,13 +60,11 @@ async def get_security_configs(
 @router.post("/{app_id}/security/configs")
 async def update_security_config(
     app_id: str,
-    guild_id: int,
     config: ConfigUpdate,
     _ = Depends(require_scope("references:write"))
 ):
     try:
         success = upsert_action_config(
-            guild_id=guild_id,
             action_key=config.action_key,
             infraction_limit=config.infraction_limit,
             punishment_type=config.punishment_type,
@@ -196,7 +193,6 @@ async def del_global_whitelist_role(app_id: str, role_id: int, _ = Depends(requi
 @router.get("/{app_id}/security/infractions")
 async def get_security_infractions(
     app_id: str,
-    guild_id: int,
     action_key: Optional[str] = None,
     user_id: Optional[int] = None,
     limit: int = Query(50, le=500),
@@ -205,7 +201,6 @@ async def get_security_infractions(
 ):
     try:
         data = list_recent_infractions(
-            guild_id=guild_id,
             action_key=action_key,
             user_id=user_id,
             limit=limit,

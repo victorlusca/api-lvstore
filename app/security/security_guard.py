@@ -90,16 +90,13 @@ CREATE TABLE IF NOT EXISTS security_systems (
     updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS security_limits (
-    guild_id INTEGER NOT NULL,
-    system_name TEXT NOT NULL,
+    system_name TEXT PRIMARY KEY,
     infraction_limit INTEGER NOT NULL,
     punishment_type TEXT NOT NULL,
-    updated_at TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (guild_id, system_name)
+    updated_at TEXT DEFAULT (datetime('now'))
 );
 CREATE TABLE IF NOT EXISTS security_infractions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     action_type TEXT NOT NULL,
     system_name TEXT NOT NULL,
@@ -108,7 +105,6 @@ CREATE TABLE IF NOT EXISTS security_infractions (
 );
 CREATE TABLE IF NOT EXISTS security_punishments (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    guild_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     action_type TEXT NOT NULL,
     system_name TEXT NOT NULL,
@@ -123,11 +119,11 @@ CREATE TABLE IF NOT EXISTS security_processed_events (
     created_at TEXT DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_sec_inf_user_action
-    ON security_infractions(guild_id, user_id, action_type);
+    ON security_infractions(user_id, action_type);
 CREATE INDEX IF NOT EXISTS idx_sec_inf_system
-    ON security_infractions(guild_id, system_name);
+    ON security_infractions(system_name);
 CREATE INDEX IF NOT EXISTS idx_sec_punish_user
-    ON security_punishments(guild_id, user_id, created_at);
+    ON security_punishments(user_id, created_at);
 """
 
 
@@ -216,20 +212,18 @@ class DatabaseService:
         finally:
             _safe_close(con)
 
-    def ensure_default_limits(self, guild_id: int) -> None:
+    def ensure_default_limits(self) -> None:
         con = None
         try:
             con = self._connect()
-            gid = int(guild_id)
             for sys_name in SYSTEM_NAMES:
                 con.execute(
                     """
                     INSERT OR IGNORE INTO security_limits
-                    (guild_id, system_name, infraction_limit, punishment_type, updated_at)
-                    VALUES (?, ?, ?, ?, datetime('now'))
+                    (system_name, infraction_limit, punishment_type, updated_at)
+                    VALUES (?, ?, ?, datetime('now'))
                     """,
                     (
-                        gid,
                         sys_name,
                         int(DEFAULT_LIMITS.get(sys_name, 1)),
                         str(DEFAULT_PUNISHMENTS.get(sys_name, "remove_roles")),
@@ -296,23 +290,23 @@ class DatabaseService:
         finally:
             _safe_close(con)
 
-    def get_limit_config(self, guild_id: int, action_or_system: str) -> Dict[str, Any]:
+    def get_limit_config(self, action_or_system: str) -> Dict[str, Any]:
         con = None
         try:
             sys_name = _to_system_name(action_or_system)
             action_key = _to_action_key(action_or_system)
             if not sys_name or not action_key:
                 return {"system_name": None, "action_key": None, "infraction_limit": 1, "punishment_type": "remove_roles"}
-            self.ensure_default_limits(int(guild_id))
+            self.ensure_default_limits()
             con = self._connect()
             row = con.execute(
                 """
                 SELECT infraction_limit, punishment_type
                 FROM security_limits
-                WHERE guild_id = ? AND system_name = ?
+                WHERE system_name = ?
                 LIMIT 1
                 """,
-                (int(guild_id), sys_name),
+                (sys_name,),
             ).fetchone()
             if not row:
                 return {
@@ -335,7 +329,7 @@ class DatabaseService:
         finally:
             _safe_close(con)
 
-    def set_limit_config(self, guild_id: int, action_or_system: str, infraction_limit: int, punishment_type: str) -> bool:
+    def set_limit_config(self, action_or_system: str, infraction_limit: int, punishment_type: str) -> bool:
         con = None
         try:
             sys_name = _to_system_name(action_or_system)
@@ -348,15 +342,15 @@ class DatabaseService:
             con.execute(
                 """
                 INSERT INTO security_limits
-                (guild_id, system_name, infraction_limit, punishment_type, updated_at)
-                VALUES (?, ?, ?, ?, datetime('now'))
-                ON CONFLICT(guild_id, system_name)
+                (system_name, infraction_limit, punishment_type, updated_at)
+                VALUES (?, ?, ?, datetime('now'))
+                ON CONFLICT(system_name)
                 DO UPDATE SET
                     infraction_limit=excluded.infraction_limit,
                     punishment_type=excluded.punishment_type,
                     updated_at=datetime('now')
                 """,
-                (int(guild_id), sys_name, max(1, int(infraction_limit)), punishment),
+                (sys_name, max(1, int(infraction_limit)), punishment),
             )
             con.commit()
             return True
@@ -368,7 +362,6 @@ class DatabaseService:
     def register_infraction(
         self,
         *,
-        guild_id: int,
         user_id: int,
         action_type: str,
         system_name: str,
@@ -380,11 +373,10 @@ class DatabaseService:
             con.execute(
                 """
                 INSERT INTO security_infractions
-                (guild_id, user_id, action_type, system_name, event_ts, details_json)
-                VALUES (?, ?, ?, ?, datetime('now'), ?)
+                (user_id, action_type, system_name, event_ts, details_json)
+                VALUES (?, ?, ?, datetime('now'), ?)
                 """,
                 (
-                    int(guild_id),
                     int(user_id),
                     _norm_action(action_type),
                     _to_system_name(system_name),
@@ -397,7 +389,7 @@ class DatabaseService:
         finally:
             _safe_close(con)
 
-    def get_infraction_count(self, *, guild_id: int, user_id: int, action_type: str) -> int:
+    def get_infraction_count(self, *, user_id: int, action_type: str) -> int:
         con = None
         try:
             con = self._connect()
@@ -405,9 +397,9 @@ class DatabaseService:
                 """
                 SELECT COUNT(1) AS n
                 FROM security_infractions
-                WHERE guild_id = ? AND user_id = ? AND action_type = ?
+                WHERE user_id = ? AND action_type = ?
                 """,
-                (int(guild_id), int(user_id), _norm_action(action_type)),
+                (int(user_id), _norm_action(action_type)),
             ).fetchone()
             return int((row["n"] if row else 0) or 0)
         except Exception:
@@ -418,7 +410,6 @@ class DatabaseService:
     def register_punishment(
         self,
         *,
-        guild_id: int,
         user_id: int,
         action_type: str,
         system_name: str,
@@ -433,11 +424,10 @@ class DatabaseService:
             con.execute(
                 """
                 INSERT INTO security_punishments
-                (guild_id, user_id, action_type, system_name, punishment_type, reason, status, details_json, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                (user_id, action_type, system_name, punishment_type, reason, status, details_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now'))
                 """,
                 (
-                    int(guild_id),
                     int(user_id),
                     _norm_action(action_type),
                     _to_system_name(system_name),
@@ -474,7 +464,6 @@ class DatabaseService:
     def has_recent_punishment(
         self,
         *,
-        guild_id: int,
         user_id: int,
         action_type: str,
         punishment_type: str,
@@ -487,8 +476,7 @@ class DatabaseService:
                 """
                 SELECT 1
                 FROM security_punishments
-                WHERE guild_id = ?
-                  AND user_id = ?
+                WHERE user_id = ?
                   AND action_type = ?
                   AND punishment_type = ?
                   AND status = 'success'
@@ -496,7 +484,6 @@ class DatabaseService:
                 LIMIT 1
                 """,
                 (
-                    int(guild_id),
                     int(user_id),
                     _norm_action(action_type),
                     (punishment_type or "").strip().lower(),
@@ -509,19 +496,17 @@ class DatabaseService:
         finally:
             _safe_close(con)
 
-    def list_limits(self, guild_id: int) -> List[Dict[str, Any]]:
+    def list_limits(self) -> List[Dict[str, Any]]:
         con = None
         try:
-            self.ensure_default_limits(int(guild_id))
+            self.ensure_default_limits()
             con = self._connect()
             rows = con.execute(
                 """
                 SELECT system_name, infraction_limit, punishment_type, updated_at
                 FROM security_limits
-                WHERE guild_id = ?
                 ORDER BY system_name ASC
-                """,
-                (int(guild_id),),
+                """
             ).fetchall()
             out: List[Dict[str, Any]] = []
             for row in rows:
@@ -537,29 +522,28 @@ class DatabaseService:
     def list_infractions(
         self,
         *,
-        guild_id: int,
         action_type: Optional[str] = None,
         user_id: Optional[int] = None,
         limit: int = 100,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
         con = None
-        where = ["guild_id = ?"]
-        params: List[Any] = [int(guild_id)]
+        where = []
+        params: List[Any] = []
         if action_type:
             where.append("action_type = ?")
             params.append(_norm_action(action_type))
         if user_id is not None:
             where.append("user_id = ?")
             params.append(int(user_id))
-        clause = " AND ".join(where)
+        clause = ("WHERE " + " AND ".join(where)) if where else ""
         try:
             con = self._connect()
             rows = con.execute(
                 f"""
-                SELECT id, guild_id, user_id, action_type, system_name, event_ts, details_json
+                SELECT id, user_id, action_type, system_name, event_ts, details_json
                 FROM security_infractions
-                WHERE {clause}
+                {clause}
                 ORDER BY id DESC
                 LIMIT ? OFFSET ?
                 """,
@@ -597,23 +581,21 @@ class SecurityService:
             return False
         return self.db.is_system_enabled(sys_name)
 
-    def register_infraction(self, guild_id: int, user_id: int, action_type: str, system_name: str, details: Any = None) -> int:
+    def register_infraction(self, user_id: int, action_type: str, system_name: str, details: Any = None) -> int:
         self.db.register_infraction(
-            guild_id=int(guild_id),
             user_id=int(user_id),
             action_type=_norm_action(action_type),
             system_name=system_name,
             details=details,
         )
-        return self.db.get_infraction_count(guild_id=int(guild_id), user_id=int(user_id), action_type=_norm_action(action_type))
+        return self.db.get_infraction_count(user_id=int(user_id), action_type=_norm_action(action_type))
 
-    def get_infraction_count(self, guild_id: int, user_id: int, action_type: str) -> int:
-        return self.db.get_infraction_count(guild_id=int(guild_id), user_id=int(user_id), action_type=_norm_action(action_type))
+    def get_infraction_count(self, user_id: int, action_type: str) -> int:
+        return self.db.get_infraction_count(user_id=int(user_id), action_type=_norm_action(action_type))
 
     def evaluate_event(
         self,
         *,
-        guild_id: int,
         user_id: int,
         action_type: str,
         role_ids: Iterable[int],
@@ -635,13 +617,12 @@ class SecurityService:
             return EventDecision(False, True, False, 0, 0, False, None, system_name, action_key)
 
         inf_count = self.register_infraction(
-            guild_id=int(guild_id),
             user_id=int(user_id),
             action_type=action_key,
             system_name=system_name,
             details=details,
         )
-        cfg = self.db.get_limit_config(int(guild_id), system_name)
+        cfg = self.db.get_limit_config(system_name)
         limit = max(1, int(cfg.get("infraction_limit") or 1))
         punishment_type = str(cfg.get("punishment_type") or "remove_roles")
         return EventDecision(
@@ -664,7 +645,6 @@ class PunishmentService:
     def register_result(
         self,
         *,
-        guild_id: int,
         user_id: int,
         action_type: str,
         system_name: str,
@@ -674,7 +654,6 @@ class PunishmentService:
         details: Any = None,
     ) -> None:
         self.db.register_punishment(
-            guild_id=int(guild_id),
             user_id=int(user_id),
             action_type=action_type,
             system_name=system_name,
@@ -687,14 +666,12 @@ class PunishmentService:
     def should_skip_duplicate(
         self,
         *,
-        guild_id: int,
         user_id: int,
         action_type: str,
         punishment_type: str,
         within_seconds: int = 30,
     ) -> bool:
         return self.db.has_recent_punishment(
-            guild_id=int(guild_id),
             user_id=int(user_id),
             action_type=_norm_action(action_type),
             punishment_type=(punishment_type or "").strip().lower(),
@@ -706,7 +683,6 @@ def audit_security_event(
     *,
     action_key: str,
     actor_discord_id: int,
-    guild_id: int,
     status: str,
     message: str,
     details: Any = None,
@@ -720,7 +696,6 @@ def audit_security_event(
             details=details,
             status=(status or "info")[:32],
             message=(message or "")[:500],
-            guild_id=int(guild_id),
             source="bot",
         )
     except Exception:
@@ -732,17 +707,16 @@ _DB = DatabaseService()
 _SEC = SecurityService(_DB)
 
 
-def ensure_default_settings(guild_id: int) -> None:
+def ensure_default_settings() -> None:
     _DB.ensure_schema()
-    _DB.ensure_default_limits(int(guild_id))
+    _DB.ensure_default_limits()
 
 
-def get_action_config(guild_id: int, action_key: str) -> Dict[str, Any]:
-    return _DB.get_limit_config(int(guild_id), action_key)
+def get_action_config(action_key: str) -> Dict[str, Any]:
+    return _DB.get_limit_config(action_key)
 
 
 def upsert_action_config(
-    guild_id: int,
     action_key: str,
     *,
     infraction_limit: int,
@@ -752,13 +726,13 @@ def upsert_action_config(
     sys_name = _to_system_name(action_key)
     if not sys_name:
         return False
-    ok_limit = _DB.set_limit_config(int(guild_id), sys_name, int(infraction_limit), punishment_type)
+    ok_limit = _DB.set_limit_config(sys_name, int(infraction_limit), punishment_type)
     ok_enabled = _DB.set_system_enabled(sys_name, int(is_enabled))
     return bool(ok_limit and ok_enabled)
 
 
-def list_action_configs(guild_id: int) -> List[Dict[str, Any]]:
-    return _DB.list_limits(int(guild_id))
+def list_action_configs() -> List[Dict[str, Any]]:
+    return _DB.list_limits()
 
 
 def check_whitelist(action_key: str, user_id: int, role_ids: Iterable[int]) -> bool:
@@ -771,24 +745,22 @@ def is_system_enabled(action_or_system: str) -> bool:
 
 def register_infraction(
     *,
-    guild_id: int,
     user_id: int,
     action_key: str,
     details: Any = None,
 ) -> int:
     system_name = _to_system_name(action_key) or ""
     action_type = _to_action_key(action_key) or _norm_action(action_key)
-    return _SEC.register_infraction(int(guild_id), int(user_id), action_type, system_name, details=details)
+    return _SEC.register_infraction(int(user_id), action_type, system_name, details=details)
 
 
-def get_infraction_count(*, guild_id: int, user_id: int, action_key: str) -> int:
+def get_infraction_count(*, user_id: int, action_key: str) -> int:
     action_type = _to_action_key(action_key) or _norm_action(action_key)
-    return _SEC.get_infraction_count(int(guild_id), int(user_id), action_type)
+    return _SEC.get_infraction_count(int(user_id), action_type)
 
 
 def process_security_event(
     *,
-    guild_id: int,
     action_key: str,
     actor_user_id: int,
     actor_role_ids: Iterable[int],
@@ -796,7 +768,6 @@ def process_security_event(
     event_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     decision = _SEC.evaluate_event(
-        guild_id=int(guild_id),
         user_id=int(actor_user_id),
         action_type=action_key,
         role_ids=actor_role_ids,
@@ -818,7 +789,6 @@ def process_security_event(
 
 def list_recent_infractions(
     *,
-    guild_id: int,
     action_key: Optional[str] = None,
     user_id: Optional[int] = None,
     limit: int = 100,
@@ -826,7 +796,6 @@ def list_recent_infractions(
 ) -> List[Dict[str, Any]]:
     action_type = _to_action_key(action_key) if action_key else None
     return _DB.list_infractions(
-        guild_id=int(guild_id),
         action_type=action_type,
         user_id=int(user_id) if user_id is not None else None,
         limit=int(limit),

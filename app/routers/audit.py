@@ -25,7 +25,6 @@ class AuditEvent(BaseModel):
     details: Any = None
     status: str = "success"
     message: Optional[str] = None
-    guild_id: Optional[int] = None
     severity: int = 0
 
 @router.get("/{app_id}/audit")
@@ -107,8 +106,8 @@ async def create_bot_audit(
                 actor_discord_id, actor_name, 
                 target_discord_id, target_game_id, target_name, 
                 details_json, status, message, 
-                guild_id, bot_id, source, severity
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                bot_id, source, severity
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
         
         details_json = json.dumps(event.details) if event.details else None
@@ -125,7 +124,6 @@ async def create_bot_audit(
             details_json,
             event.status,
             event.message,
-            event.guild_id,
             int(app_id) if app_id.isdigit() else None,
             "api",
             event.severity

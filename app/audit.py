@@ -34,7 +34,6 @@ def _ensure() -> None:
                 details_json TEXT, 
                 status TEXT, 
                 message TEXT, 
-                guild_id INTEGER, 
                 channel_id INTEGER, 
                 message_id INTEGER, 
                 bot_id INTEGER, 
@@ -81,7 +80,6 @@ def write_audit(
     details_json: Any = None,
     status: str = "success",
     message: str = "",
-    guild_id: Optional[int] = None,
     channel_id: Optional[int] = None,
     message_id: Optional[int] = None,
     bot_id: Optional[int] = None,
@@ -107,12 +105,12 @@ def write_audit(
             """INSERT INTO audit_log
                (event_type, system_key, action_key, actor_discord_id, actor_name, 
                 target_discord_id, target_game_id, target_name, details_json, 
-                status, message, guild_id, channel_id, message_id, bot_id, 
+                status, message, channel_id, message_id, bot_id, 
                 source, severity, site_user_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (event_type, system_key, action_key, actor_discord_id, actor_name,
              target_discord_id, target_game_id, target_name, _ser(details_json),
-             status, message, guild_id, channel_id, message_id, bot_id,
+             status, message, channel_id, message_id, bot_id,
              source, severity, site_user_id),
         )
         con.commit(); con.close()
