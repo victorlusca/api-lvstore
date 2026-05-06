@@ -3,7 +3,7 @@ import sqlite3
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from app.security.audit import log_audit
+from app.core.audit import log_audit
 from app.security.security_whitelist import is_allowed as wl_is_allowed
 from app.settings import data_path
 
@@ -715,7 +715,7 @@ def audit_security_event(
         log_audit(
             event_type="security",
             system_key="Seguranca",
-            action_key=_norm_action(action_key),
+            action=_norm_action(action_key),
             actor_discord_id=int(actor_discord_id),
             details=details,
             status=(status or "info")[:32],
