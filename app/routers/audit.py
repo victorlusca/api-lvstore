@@ -3,11 +3,13 @@ routes_audit.py â€” Auditoria do bot (logs de aÃ§Ãµes in-game e discord
 Este arquivo expÃµe os logs gravados por utils/audit.py (tabela audit_log no master_data.db).
 """
 import json
+import aiosqlite
 from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from typing import Optional, List, Dict, Any
 from app.auth import require_scope
 from app.responses import ok, err
 from app.helpers import master_con
+from app.settings import data_path
 
 from pydantic import BaseModel
 
@@ -123,6 +125,74 @@ async def get_bot_audit(
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/{app_id}/audit/")
+async def get_audit_log_simple(
+    app_id: str,
+    limit: int = Query(50),
+    offset: int = Query(0)
+):
+    """
+    Endpoint simples que reflete a tabela audit_log conforme requisitos específicos.
+    """
+    # Regra 3: Paginação (obrigatória)
+    # Se limit não for informado -> usar 50 (já via Query)
+    # Se limit for maior que 100 -> usar 100
+    if limit > 100:
+        limit = 100
+    elif limit < 1:
+        limit = 50
+    
+    # Se offset não for informado -> usar 0 (já via Query)
+    if offset < 0:
+        offset = 0
+
+    db_path = data_path("master_data.db")
+    
+    try:
+        async with aiosqlite.connect(db_path) as db:
+            db.row_factory = aiosqlite.Row
+            
+            # Regras 1, 2, 4 e 10: Query parametrizada, filtro bot_id, ordenação created_at DESC
+            # SQL esperado: SELECT * FROM audit_log WHERE bot_id = :app_id ORDER BY created_at DESC LIMIT :limit OFFSET :offset
+            async with db.execute(
+                "SELECT * FROM audit_log WHERE bot_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (app_id, limit, offset)
+            ) as cursor:
+                rows = await cursor.fetchall()
+
+        result_data = []
+        for row in rows:
+            item = dict(row)
+            
+            # Regra 5: Renomeação de campos (OBRIGATÓRIO)
+            item["feito_em"] = item.pop("created_at")
+            item["nome_sistema"] = item.pop("system_key")
+            item["autor"] = item.pop("actor_discord_id")
+            item["alvo"] = item.pop("target_discord_id")
+            
+            # Regra 6: Campo details_json (Parse JSON ou string original)
+            details = item.get("details_json")
+            if details:
+                try:
+                    if isinstance(details, str):
+                        item["details_json"] = json.loads(details)
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    # Se falhar -> retornar como string original
+                    pass
+            
+            result_data.append(item)
+
+        # Regra 7 e 8: Estrutura de resposta (OBRIGATÓRIO)
+        # Se não houver registros -> retorna data: []
+        return {
+            "ok": True,
+            "data": result_data
+        }
+    except Exception as e:
+        # Em caso de erro crítico no banco de dados
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
 
 @router.post("/{app_id}/audit/bot")
 async def create_bot_audit(
