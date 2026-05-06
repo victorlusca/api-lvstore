@@ -1,11 +1,13 @@
-﻿"""
+"""
 helpers.py â€” utilitÃ¡rios compartilhados entre os blueprints da API.
 """
 import sqlite3
 from typing import Optional, Dict, Any
 
-_MASTER_DB    = "data/master_data.db"
-_REFERENCE_DB = "data/reference_data.db"
+from app.settings import data_path
+
+_MASTER_DB    = data_path("master_data.db")
+_REFERENCE_DB = data_path("reference_data.db")
 
 
 def master_con() -> sqlite3.Connection:
