@@ -250,6 +250,74 @@ def remove_global_role(role_id: int) -> None:
             pass
 
 
+def list_global_users() -> List[int]:
+    users: List[int] = []
+    try:
+        con = _connect()
+        cur = con.cursor()
+        for (uid,) in cur.execute(
+            "SELECT user_id FROM security_whitelist_global_users ORDER BY user_id ASC"
+        ).fetchall():
+            users.append(int(uid))
+        con.close()
+    except Exception:
+        try: con.close()
+        except Exception: pass
+    return users
+
+
+def list_global_roles() -> List[int]:
+    roles: List[int] = []
+    try:
+        con = _connect()
+        cur = con.cursor()
+        for (rid,) in cur.execute(
+            "SELECT role_id FROM security_whitelist_global_roles ORDER BY role_id ASC"
+        ).fetchall():
+            roles.append(int(rid))
+        con.close()
+    except Exception:
+        try: con.close()
+        except Exception: pass
+    return roles
+
+
+def list_action_users(action_key: str) -> List[int]:
+    users: List[int] = []
+    try:
+        con = _connect()
+        cur = con.cursor()
+        norm_action = _norm_action(action_key)
+        for (uid,) in cur.execute(
+            "SELECT user_id FROM security_whitelist_users WHERE action_key = ? ORDER BY user_id ASC",
+            (norm_action,),
+        ).fetchall():
+            users.append(int(uid))
+        con.close()
+    except Exception:
+        try: con.close()
+        except Exception: pass
+    return users
+
+
+def list_action_roles(action_key: str) -> List[int]:
+    roles: List[int] = []
+    try:
+        con = _connect()
+        cur = con.cursor()
+        norm_action = _norm_action(action_key)
+        for (rid,) in cur.execute(
+            "SELECT role_id FROM security_whitelist_roles WHERE action_key = ? ORDER BY role_id ASC",
+            (norm_action,),
+        ).fetchall():
+            roles.append(int(rid))
+        con.close()
+    except Exception:
+        try: con.close()
+        except Exception: pass
+    return roles
+
+
 def list_global_whitelist() -> Tuple[List[int], List[int]]:
     users: List[int] = []
     roles: List[int] = []

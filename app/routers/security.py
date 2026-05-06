@@ -19,6 +19,10 @@ from app.security.security_guard import (
 from app.security.security_whitelist import (
     list_action_whitelist,
     list_global_whitelist,
+    list_global_users,
+    list_global_roles,
+    list_action_users,
+    list_action_roles,
     add_user,
     remove_user,
     add_role,
@@ -136,81 +140,19 @@ async def update_security_system(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{app_id}/security/whitelist")
-async def get_security_whitelist(
-    app_id: str,
-    action_key: Optional[str] = None, 
-    _ = Depends(require_scope("references:read"))
-):
+# --- WHITELIST GLOBAL ---
+
+@router.get("/{app_id}/security/whitelist/global/users")
+async def get_global_whitelist_users(app_id: str, _ = Depends(require_scope("references:read"))):
     try:
-        if not action_key:
-            from app.security.security_guard import ACTION_KEYS
-            return {"error": False, "message": "Forneça um action_key", "available_keys": ACTION_KEYS}
-            
-        users, roles = list_action_whitelist(action_key)
-        data = {"action_key": action_key, "users": users, "roles": roles}
+        data = list_global_users()
         res, status = ok(data)
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.get("/{app_id}/security/whitelist/global")
-async def get_global_security_whitelist(
-    app_id: str,
-    _ = Depends(require_scope("references:read"))
-):
-    try:
-        users, roles = list_global_whitelist()
-        data = {"users": users, "roles": roles}
-        res, status = ok(data)
-        return res
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/{app_id}/security/whitelist/user")
-async def add_whitelist_user(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
-    try:
-        if not data.action_key or not data.user_id:
-            raise HTTPException(status_code=400, detail="action_key e user_id são obrigatórios")
-        add_user(data.action_key, data.user_id)
-        res, status = ok({"message": "Usuário adicionado à whitelist"})
-        return res
-    except HTTPException: raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.delete("/{app_id}/security/whitelist/user")
-async def del_whitelist_user(app_id: str, action_key: str, user_id: int, _ = Depends(require_scope("references:write"))):
-    try:
-        remove_user(action_key, user_id)
-        res, status = ok({"message": "Usuário removido da whitelist"})
-        return res
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/{app_id}/security/whitelist/role")
-async def add_whitelist_role(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
-    try:
-        if not data.action_key or not data.role_id:
-            raise HTTPException(status_code=400, detail="action_key e role_id são obrigatórios")
-        add_role(data.action_key, data.role_id)
-        res, status = ok({"message": "Cargo adicionado à whitelist"})
-        return res
-    except HTTPException: raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.delete("/{app_id}/security/whitelist/role")
-async def del_whitelist_role(app_id: str, action_key: str, role_id: int, _ = Depends(require_scope("references:write"))):
-    try:
-        remove_role(action_key, role_id)
-        res, status = ok({"message": "Cargo removido da whitelist"})
-        return res
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-@router.post("/{app_id}/security/whitelist/global/user")
-async def add_global_whitelist_user(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
+@router.post("/{app_id}/security/whitelist/global/users")
+async def add_global_whitelist_user_endpoint(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
     try:
         if not data.user_id:
             raise HTTPException(status_code=400, detail="user_id é obrigatório")
@@ -221,17 +163,17 @@ async def add_global_whitelist_user(app_id: str, data: WhitelistUpdate, _ = Depe
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/{app_id}/security/whitelist/global/user")
-async def del_global_whitelist_user(app_id: str, user_id: int, _ = Depends(require_scope("references:write"))):
+@router.get("/{app_id}/security/whitelist/global/roles")
+async def get_global_whitelist_roles(app_id: str, _ = Depends(require_scope("references:read"))):
     try:
-        remove_global_user(user_id)
-        res, status = ok({"message": "Usuário removido da whitelist global"})
+        data = list_global_roles()
+        res, status = ok(data)
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.post("/{app_id}/security/whitelist/global/role")
-async def add_global_whitelist_role(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
+@router.post("/{app_id}/security/whitelist/global/roles")
+async def add_global_whitelist_role_endpoint(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
     try:
         if not data.role_id:
             raise HTTPException(status_code=400, detail="role_id é obrigatório")
@@ -242,11 +184,82 @@ async def add_global_whitelist_role(app_id: str, data: WhitelistUpdate, _ = Depe
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-@router.delete("/{app_id}/security/whitelist/global/role")
-async def del_global_whitelist_role(app_id: str, role_id: int, _ = Depends(require_scope("references:write"))):
+@router.delete("/{app_id}/security/whitelist/global/users")
+async def del_global_whitelist_user_endpoint(app_id: str, user_id: int, _ = Depends(require_scope("references:write"))):
+    try:
+        remove_global_user(user_id)
+        res, status = ok({"message": "Usuário removido da whitelist global"})
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{app_id}/security/whitelist/global/roles")
+async def del_global_whitelist_role_endpoint(app_id: str, role_id: int, _ = Depends(require_scope("references:write"))):
     try:
         remove_global_role(role_id)
         res, status = ok({"message": "Cargo removido da whitelist global"})
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- WHITELIST ESPECÍFICA (POR AÇÃO) ---
+
+@router.get("/{app_id}/security/whitelist/users")
+async def get_action_whitelist_users(app_id: str, action_key: str, _ = Depends(require_scope("references:read"))):
+    try:
+        data = list_action_users(action_key)
+        res, status = ok(data)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{app_id}/security/whitelist/users")
+async def add_action_whitelist_user_endpoint(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
+    try:
+        if not data.action_key or not data.user_id:
+            raise HTTPException(status_code=400, detail="action_key e user_id são obrigatórios")
+        add_user(data.action_key, data.user_id)
+        res, status = ok({"message": "Usuário adicionado à whitelist"})
+        return res
+    except HTTPException: raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/{app_id}/security/whitelist/roles")
+async def get_action_whitelist_roles(app_id: str, action_key: str, _ = Depends(require_scope("references:read"))):
+    try:
+        data = list_action_roles(action_key)
+        res, status = ok(data)
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{app_id}/security/whitelist/roles")
+async def add_action_whitelist_role_endpoint(app_id: str, data: WhitelistUpdate, _ = Depends(require_scope("references:write"))):
+    try:
+        if not data.action_key or not data.role_id:
+            raise HTTPException(status_code=400, detail="action_key e role_id são obrigatórios")
+        add_role(data.action_key, data.role_id)
+        res, status = ok({"message": "Cargo adicionado à whitelist"})
+        return res
+    except HTTPException: raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{app_id}/security/whitelist/users")
+async def del_action_whitelist_user_endpoint(app_id: str, action_key: str, user_id: int, _ = Depends(require_scope("references:write"))):
+    try:
+        remove_user(action_key, user_id)
+        res, status = ok({"message": "Usuário removido da whitelist"})
+        return res
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/{app_id}/security/whitelist/roles")
+async def del_action_whitelist_role_endpoint(app_id: str, action_key: str, role_id: int, _ = Depends(require_scope("references:write"))):
+    try:
+        remove_role(action_key, role_id)
+        res, status = ok({"message": "Cargo removido da whitelist"})
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
