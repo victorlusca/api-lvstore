@@ -1,4 +1,5 @@
 import json
+import os
 import sqlite3
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -184,9 +185,23 @@ class EventDecision:
 class DatabaseService:
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
-        self.ensure_schema()
+        self._schema_ready = False
+        # Tenta criar o schema no cold-start, mas não bloqueia se falhar
+        # (ex: diretório ainda não existe no primeiro import).
+        # set_limit_config e set_system_enabled re-tentam antes de escrever.
+        try:
+            self.ensure_schema()
+            self._schema_ready = True
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"[SecurityGuard] ensure_schema no __init__ falhou (será re-tentado na primeira escrita): {e}"
+            )
 
     def _connect(self) -> sqlite3.Connection:
+        # Garante que o diretório existe — crítico no cold-start do SquareCloud
+        db_dir = os.path.dirname(os.path.abspath(self.db_path))
+        os.makedirs(db_dir, exist_ok=True)
         con = sqlite3.connect(self.db_path, timeout=15)
         con.row_factory = sqlite3.Row
         con.execute("PRAGMA journal_mode=WAL")
@@ -207,14 +222,16 @@ class DatabaseService:
                     (sys_name,),
                 )
             con.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            # Não engole — deixa subir para que o chamador saiba o que falhou
+            raise RuntimeError(f"[SecurityGuard] ensure_schema falhou: {e}") from e
         finally:
             _safe_close(con)
 
     def ensure_default_limits(self) -> None:
         con = None
         try:
+            self.ensure_schema()
             con = self._connect()
             for sys_name in SYSTEM_NAMES:
                 con.execute(
@@ -230,8 +247,9 @@ class DatabaseService:
                     ),
                 )
             con.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).warning(f"[SecurityGuard] ensure_default_limits falhou: {e}")
         finally:
             _safe_close(con)
 
@@ -259,7 +277,9 @@ class DatabaseService:
         try:
             sys_name = _to_system_name(system_name)
             if not sys_name:
-                return False
+                raise ValueError(f"Sistema inválido: {system_name!r}")
+            # Garante que as tabelas existem antes de escrever
+            self.ensure_schema()
             con = self._connect()
             con.execute(
                 """
@@ -272,8 +292,8 @@ class DatabaseService:
             )
             con.commit()
             return True
-        except Exception:
-            return False
+        except Exception as e:
+            raise RuntimeError(f"[SecurityGuard] set_system_enabled({system_name!r}) falhou: {e}") from e
         finally:
             _safe_close(con)
 
@@ -334,10 +354,12 @@ class DatabaseService:
         try:
             sys_name = _to_system_name(action_or_system)
             if not sys_name:
-                return False
+                raise ValueError(f"Chave de ação/sistema inválida: {action_or_system!r}")
             punishment = (punishment_type or "").strip().lower()
             if punishment not in VALID_PUNISHMENTS:
-                return False
+                raise ValueError(f"Tipo de punição inválido: {punishment!r}. Opções: {sorted(VALID_PUNISHMENTS)}")
+            # Garante que as tabelas existem antes de escrever
+            self.ensure_schema()
             con = self._connect()
             con.execute(
                 """
@@ -354,8 +376,8 @@ class DatabaseService:
             )
             con.commit()
             return True
-        except Exception:
-            return False
+        except Exception as e:
+            raise RuntimeError(f"[SecurityGuard] set_limit_config({action_or_system!r}) falhou: {e}") from e
         finally:
             _safe_close(con)
 
@@ -725,10 +747,11 @@ def upsert_action_config(
 ) -> bool:
     sys_name = _to_system_name(action_key)
     if not sys_name:
-        return False
-    ok_limit = _DB.set_limit_config(sys_name, int(infraction_limit), punishment_type)
-    ok_enabled = _DB.set_system_enabled(sys_name, int(is_enabled))
-    return bool(ok_limit and ok_enabled)
+        raise ValueError(f"Chave de ação inválida: {action_key!r}")
+    # Ambas as funções agora levantam RuntimeError com detalhe em caso de falha
+    _DB.set_limit_config(sys_name, int(infraction_limit), punishment_type)
+    _DB.set_system_enabled(sys_name, int(is_enabled))
+    return True
 
 
 def list_action_configs() -> List[Dict[str, Any]]:
@@ -808,7 +831,9 @@ def list_system_states() -> List[Dict[str, Any]]:
 
 
 def set_system_state(system_name: str, enabled: int) -> bool:
-    return _DB.set_system_enabled(system_name, enabled)
+    # Propaga exceções — o router trata e converte em HTTPException adequado
+    _DB.set_system_enabled(system_name, enabled)
+    return True
 
 
 def get_schema_sql() -> str:
