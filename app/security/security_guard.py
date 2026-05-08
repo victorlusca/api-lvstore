@@ -96,6 +96,8 @@ CREATE TABLE IF NOT EXISTS security_limits (
     punishment_type TEXT NOT NULL,
     updated_at TEXT DEFAULT (datetime('now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS ux_security_limits_system_name
+    ON security_limits(system_name);
 CREATE TABLE IF NOT EXISTS security_infractions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER NOT NULL,
@@ -119,10 +121,6 @@ CREATE TABLE IF NOT EXISTS security_processed_events (
     event_key TEXT PRIMARY KEY,
     created_at TEXT DEFAULT (datetime('now'))
 );
-CREATE UNIQUE INDEX IF NOT EXISTS ux_security_limits_system_name
-    ON security_limits(system_name);
-CREATE UNIQUE INDEX IF NOT EXISTS ux_security_systems_system_name
-    ON security_systems(system_name);
 CREATE INDEX IF NOT EXISTS idx_sec_inf_user_action
     ON security_infractions(user_id, action_type);
 CREATE INDEX IF NOT EXISTS idx_sec_inf_system
@@ -217,6 +215,8 @@ class DatabaseService:
         try:
             con = self._connect()
             con.executescript(SCHEMA_SQL)
+            self._migrate_limits_uniqueness(con)
+            self._migrate_legacy_limit_configs_uniqueness(con)
             for sys_name in SYSTEM_NAMES:
                 con.execute(
                     """
@@ -231,6 +231,129 @@ class DatabaseService:
             raise RuntimeError(f"[SecurityGuard] ensure_schema falhou: {e}") from e
         finally:
             _safe_close(con)
+
+    def _migrate_limits_uniqueness(self, con: sqlite3.Connection) -> None:
+        rows = con.execute(
+            """
+            SELECT rowid, system_name, infraction_limit, punishment_type
+            FROM security_limits
+            """
+        ).fetchall()
+        for row in rows:
+            raw_system = str(row["system_name"] or "").strip()
+            sys_name = _to_system_name(raw_system) or raw_system.upper()
+            if not sys_name:
+                continue
+            punishment = str(row["punishment_type"] or "remove_roles").strip().lower()
+            if punishment not in VALID_PUNISHMENTS:
+                punishment = "remove_roles"
+            limit = max(1, int(row["infraction_limit"] or 1))
+            if (
+                sys_name != row["system_name"]
+                or punishment != row["punishment_type"]
+                or limit != int(row["infraction_limit"] or 1)
+            ):
+                con.execute(
+                    """
+                    UPDATE security_limits
+                    SET system_name = ?, infraction_limit = ?, punishment_type = ?, updated_at = datetime('now')
+                    WHERE rowid = ?
+                    """,
+                    (sys_name, limit, punishment, int(row["rowid"])),
+                )
+        con.execute("DELETE FROM security_limits WHERE system_name IS NULL OR TRIM(system_name) = ''")
+        con.execute(
+            """
+            DELETE FROM security_limits
+            WHERE rowid NOT IN (
+                SELECT MAX(rowid)
+                FROM security_limits
+                GROUP BY system_name
+            )
+            """
+        )
+        con.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS ux_security_limits_system_name
+            ON security_limits(system_name)
+            """
+        )
+
+    def _migrate_legacy_limit_configs_uniqueness(self, con: sqlite3.Connection) -> None:
+        tbl = con.execute(
+            """
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = 'security_limit_configs'
+            LIMIT 1
+            """
+        ).fetchone()
+        if not tbl:
+            return
+
+        cols = {
+            str(r["name"]).lower()
+            for r in con.execute("PRAGMA table_info('security_limit_configs')").fetchall()
+        }
+        if "action_key" not in cols:
+            return
+
+        con.execute(
+            """
+            UPDATE security_limit_configs
+            SET action_key = LOWER(TRIM(action_key))
+            WHERE action_key IS NOT NULL
+            """
+        )
+        if "punishment_type" in cols:
+            con.execute(
+                """
+                UPDATE security_limit_configs
+                SET punishment_type = LOWER(TRIM(punishment_type))
+                WHERE punishment_type IS NOT NULL
+                """
+            )
+        con.execute(
+            """
+            DELETE FROM security_limit_configs
+            WHERE action_key IS NULL OR TRIM(action_key) = ''
+            """
+        )
+
+        if "bot_id" in cols:
+            con.execute(
+                """
+                DELETE FROM security_limit_configs
+                WHERE rowid NOT IN (
+                    SELECT MAX(rowid)
+                    FROM security_limit_configs
+                    GROUP BY bot_id, action_key
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_security_limit_configs_bot_action
+                ON security_limit_configs(bot_id, action_key)
+                """
+            )
+        else:
+            con.execute(
+                """
+                DELETE FROM security_limit_configs
+                WHERE rowid NOT IN (
+                    SELECT MAX(rowid)
+                    FROM security_limit_configs
+                    GROUP BY action_key
+                )
+                """
+            )
+            con.execute(
+                """
+                CREATE UNIQUE INDEX IF NOT EXISTS ux_security_limit_configs_action_key
+                ON security_limit_configs(action_key)
+                """
+            )
 
     def ensure_default_limits(self) -> None:
         con = None
