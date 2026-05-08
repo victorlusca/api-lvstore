@@ -119,6 +119,10 @@ CREATE TABLE IF NOT EXISTS security_processed_events (
     event_key TEXT PRIMARY KEY,
     created_at TEXT DEFAULT (datetime('now'))
 );
+CREATE UNIQUE INDEX IF NOT EXISTS ux_security_limits_system_name
+    ON security_limits(system_name);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_security_systems_system_name
+    ON security_systems(system_name);
 CREATE INDEX IF NOT EXISTS idx_sec_inf_user_action
     ON security_infractions(user_id, action_type);
 CREATE INDEX IF NOT EXISTS idx_sec_inf_system
@@ -838,4 +842,3 @@ def set_system_state(system_name: str, enabled: int) -> bool:
 
 def get_schema_sql() -> str:
     return SCHEMA_SQL
-
