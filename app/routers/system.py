@@ -48,10 +48,10 @@ async def sync_transcripts(app_id: str):
 @router.get("/settings/{table}", dependencies=[Depends(require_scope("admin:*"))])
 async def get_reference_settings(app_id: str, table: str):
     allowed_tables = {
-        "cargos_gerais", "categorias_gerais", "chats_gerais", 
-        "configuracoes_e_numeros", "configuracoes_organizacao", 
+        "cargos_gerais", "categorias_gerais", "chats_gerais",
+        "configuracoes_e_numeros", "configuracoes_organizacao",
         "configuracoes_plano", "configuracoes_servidor",
-        "logs", "calls"
+        "logs", "calls", "bot_configuration"
     }
     if table not in allowed_tables:
         raise HTTPException(status_code=404, detail="Configuração não encontrada")
@@ -75,8 +75,9 @@ async def update_kv_settings(app_id: str, table: str, update: KVUpdate):
 @router.put("/settings/{table}/row", dependencies=[Depends(require_scope("admin:*"))])
 async def update_row_settings(app_id: str, table: str, data: Dict[str, Any]):
     row_tables = {
-        "configuracoes_e_numeros", "configuracoes_organizacao", 
-        "configuracoes_plano", "configuracoes_servidor"
+        "configuracoes_e_numeros", "configuracoes_organizacao",
+        "configuracoes_plano", "configuracoes_servidor",
+        "bot_configuration"
     }
     if table not in row_tables:
         raise HTTPException(status_code=400, detail="Esta tabela não é do tipo Linha Única")

@@ -35,40 +35,60 @@ async def get_all_embeds(app_id: str):
     data = await embed_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
 
+# Sistema livre (área do usuário): pode criar, editar todos os campos e excluir.
+# Todas as demais embeds são ESTRUTURAIS/protegidas: editáveis apenas em
+# título/descrição/cor/footer e não podem ser criadas nem excluídas por aqui.
+FREE_SYSTEM_KEY = "send_embed"
+PROTECTED_EDITABLE_FIELDS = ("title", "description", "color", "footer_json")
+
+
 @router.put("", dependencies=[Depends(require_scope("admin:*"))])
 async def update_embed(app_id: str, update: EmbedUpdate):
     audit_log(app_id, "UPDATE_EMBED", f"Updating embed: {update.system_key}:{update.embed_key}")
-    
+
+    if update.system_key == FREE_SYSTEM_KEY:
+        # Área livre: upsert com todos os campos apresentáveis (inclui footer).
+        query = """
+        INSERT INTO embeds (system_key, embed_key, content, title, type, description, url, timestamp, color, footer_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(system_key, embed_key) DO UPDATE SET
+            content = excluded.content,
+            title = excluded.title,
+            type = excluded.type,
+            description = excluded.description,
+            url = excluded.url,
+            timestamp = excluded.timestamp,
+            color = excluded.color,
+            footer_json = excluded.footer_json
+        """
+        await embed_service.execute_update(app_id, query, (
+            update.system_key, update.embed_key, update.content, update.title,
+            update.type, update.description, update.url, update.timestamp,
+            update.color, update.footer_json,
+        ))
+        return {"ok": True, "message": "Embed atualizada com sucesso"}
+
+    # Embed estrutural/protegida: só atualiza os campos permitidos; NUNCA cria
+    # (não há INSERT) — impede renomear/criar embeds padrão pela API.
     query = """
-    INSERT INTO embeds (system_key, embed_key, content, title, type, description, url, timestamp, color)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-    ON CONFLICT(system_key, embed_key) DO UPDATE SET
-        content = excluded.content,
-        title = excluded.title,
-        type = excluded.type,
-        description = excluded.description,
-        url = excluded.url,
-        timestamp = excluded.timestamp,
-        color = excluded.color
+    UPDATE embeds SET title = ?, description = ?, color = ?, footer_json = ?
+    WHERE system_key = ? AND embed_key = ?
     """
-    
     await embed_service.execute_update(app_id, query, (
-        update.system_key,
-        update.embed_key,
-        update.content,
-        update.title,
-        update.type,
-        update.description,
-        update.url,
-        update.timestamp,
-        update.color
+        update.title, update.description, update.color, update.footer_json,
+        update.system_key, update.embed_key,
     ))
-    
     return {"ok": True, "message": "Embed atualizada com sucesso"}
+
 
 @router.delete("/{system_key}/{embed_key}", dependencies=[Depends(require_scope("admin:*"))])
 async def delete_embed(app_id: str, system_key: str, embed_key: str):
-    audit_log(app_id, "DELETE_EMBED", f"Deleting embed: {system_key}:{embed_key}")
-    query = "DELETE FROM embeds WHERE system_key = ? AND embed_key = ?"
+    # Embeds estruturais são protegidas contra exclusão. Só a área livre
+    # (send_embed) pode remover — e ainda assim via soft-delete (is_active=0).
+    if system_key != FREE_SYSTEM_KEY:
+        audit_log(app_id, "DELETE_EMBED_DENIED", f"Blocked deletion of protected embed: {system_key}:{embed_key}")
+        raise HTTPException(status_code=403, detail="Embeds estruturais não podem ser excluídas.")
+    audit_log(app_id, "DELETE_EMBED", f"Deactivating embed: {system_key}:{embed_key}")
+    query = "UPDATE embeds SET is_active = 0 WHERE system_key = ? AND embed_key = ?"
     await embed_service.execute_update(app_id, query, (system_key, embed_key))
     return {"ok": True, "message": "Embed removida com sucesso"}

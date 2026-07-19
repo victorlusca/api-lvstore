@@ -137,14 +137,16 @@ def create_app() -> FastAPI:
         elif "*" in allowed_origins or not allowed_origins:
             headers["Access-Control-Allow-Origin"] = "*"
 
-        # Incluir detalhes do erro para ajudar no debug do usuário
+        # Detalhes do erro só são expostos ao cliente em DEBUG (evita vazamento
+        # de mensagens internas em produção). O log server-side acima preserva o
+        # error_msg + stack_trace para diagnóstico.
         content = {
-            "ok": False, 
-            "error": "Internal Server Error", 
-            "detail": error_msg
+            "ok": False,
+            "error": "Internal Server Error"
         }
-        
+
         if settings.DEBUG:
+            content["detail"] = error_msg
             content["traceback"] = stack_trace
 
         return SafeJSONResponse(

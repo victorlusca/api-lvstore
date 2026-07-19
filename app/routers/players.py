@@ -107,4 +107,4 @@ async def delete_player(app_id: str, player_id: int):
     query = "DELETE FROM players WHERE id = ?"
     await sqlite_service.execute_update(app_id, query, (player_id,))
     
-    return {"ok": True, "message": "Player deleted and database synced"}
+    return {"ok": True, "message": f"Jogador ID {player_id} removido e banco sincronizado."}
