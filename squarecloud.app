@@ -1,5 +1,5 @@
-DISPLAY_NAME=LV Store API
-DESCRIPTION=API de gerenciamento de bots e arquivos SQLite
+DISPLAY_NAME=API
+DESCRIPTION=DEEPER API
 MAIN=main.py
 MEMORY=256
 VERSION=recommended

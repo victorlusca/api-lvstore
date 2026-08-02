@@ -7,6 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from app.core.audit import log_audit
 from app.security.security_whitelist import is_allowed as wl_is_allowed
 from app.settings import data_path
+from app.services.sqlite_engine import sqlite_service
 
 DB_PATH = data_path("master_data.db")
 
@@ -865,24 +866,58 @@ def get_action_config(action_key: str) -> Dict[str, Any]:
     return _DB.get_limit_config(action_key)
 
 
-def upsert_action_config(
+async def upsert_action_config(
+    app_id: str,
     action_key: str,
     *,
     infraction_limit: int,
     punishment_type: str,
     is_enabled: int = 1,
 ) -> bool:
+    """Grava a configuração de segurança no banco real do bot (via Square Cloud,
+    por app_id) — não no arquivo local do processo da API. Ver `sqlite_service`.
+    """
     sys_name = _to_system_name(action_key)
     if not sys_name:
         raise ValueError(f"Chave de ação inválida: {action_key!r}")
-    # Ambas as funções agora levantam RuntimeError com detalhe em caso de falha
-    _DB.set_limit_config(sys_name, int(infraction_limit), punishment_type)
-    _DB.set_system_enabled(sys_name, int(is_enabled))
+    punishment = (punishment_type or "").strip().lower()
+    if punishment not in VALID_PUNISHMENTS:
+        raise ValueError(f"Tipo de punição inválido: {punishment!r}. Opções: {sorted(VALID_PUNISHMENTS)}")
+    await sqlite_service.execute_update(
+        app_id,
+        """
+        INSERT INTO security_limits (system_name, infraction_limit, punishment_type, updated_at)
+        VALUES (?, ?, ?, datetime('now'))
+        ON CONFLICT(system_name) DO UPDATE SET
+            infraction_limit=excluded.infraction_limit,
+            punishment_type=excluded.punishment_type,
+            updated_at=datetime('now')
+        """,
+        (sys_name, max(1, int(infraction_limit)), punishment),
+    )
+    await sqlite_service.execute_update(
+        app_id,
+        """
+        INSERT INTO security_systems (system_name, enabled, updated_at)
+        VALUES (?, ?, datetime('now'))
+        ON CONFLICT(system_name) DO UPDATE SET enabled=excluded.enabled, updated_at=datetime('now')
+        """,
+        (sys_name, 1 if int(is_enabled) else 0),
+    )
     return True
 
 
-def list_action_configs() -> List[Dict[str, Any]]:
-    return _DB.list_limits()
+async def list_action_configs(app_id: str) -> List[Dict[str, Any]]:
+    rows = await sqlite_service.execute_query(
+        app_id,
+        "SELECT system_name, infraction_limit, punishment_type, updated_at FROM security_limits ORDER BY system_name ASC",
+    )
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        d = dict(row)
+        d["action_key"] = SYSTEM_TO_ACTION.get(d["system_name"])
+        out.append(d)
+    return out
 
 
 def check_whitelist(action_key: str, user_id: int, role_ids: Iterable[int]) -> bool:
@@ -937,7 +972,8 @@ def process_security_event(
     }
 
 
-def list_recent_infractions(
+async def list_recent_infractions(
+    app_id: str,
     *,
     action_key: Optional[str] = None,
     user_id: Optional[int] = None,
@@ -945,21 +981,61 @@ def list_recent_infractions(
     offset: int = 0,
 ) -> List[Dict[str, Any]]:
     action_type = _to_action_key(action_key) if action_key else None
-    return _DB.list_infractions(
-        action_type=action_type,
-        user_id=int(user_id) if user_id is not None else None,
-        limit=int(limit),
-        offset=int(offset),
+    where = []
+    params: List[Any] = []
+    if action_type:
+        where.append("action_type = ?")
+        params.append(action_type)
+    if user_id is not None:
+        where.append("user_id = ?")
+        params.append(int(user_id))
+    clause = ("WHERE " + " AND ".join(where)) if where else ""
+    rows = await sqlite_service.execute_query(
+        app_id,
+        f"""
+        SELECT id, user_id, action_type, system_name, event_ts, details_json
+        FROM security_infractions
+        {clause}
+        ORDER BY event_ts DESC
+        LIMIT ? OFFSET ?
+        """,
+        (*params, int(limit), int(offset)),
     )
+    out: List[Dict[str, Any]] = []
+    for row in rows:
+        d = dict(row)
+        raw = d.get("details_json")
+        if raw:
+            try:
+                d["details"] = json.loads(raw)
+            except Exception:
+                d["details"] = raw
+        else:
+            d["details"] = None
+        out.append(d)
+    return out
 
 
-def list_system_states() -> List[Dict[str, Any]]:
-    return _DB.list_systems()
+async def list_system_states(app_id: str) -> List[Dict[str, Any]]:
+    rows = await sqlite_service.execute_query(
+        app_id, "SELECT system_name, enabled, updated_at FROM security_systems ORDER BY system_name ASC"
+    )
+    return [dict(r) for r in rows]
 
 
-def set_system_state(system_name: str, enabled: int) -> bool:
-    # Propaga exceções — o router trata e converte em HTTPException adequado
-    _DB.set_system_enabled(system_name, enabled)
+async def set_system_state(app_id: str, system_name: str, enabled: int) -> bool:
+    sys_name = _to_system_name(system_name)
+    if not sys_name:
+        raise ValueError(f"Sistema inválido: {system_name!r}")
+    await sqlite_service.execute_update(
+        app_id,
+        """
+        INSERT INTO security_systems (system_name, enabled, updated_at)
+        VALUES (?, ?, datetime('now'))
+        ON CONFLICT(system_name) DO UPDATE SET enabled=excluded.enabled, updated_at=datetime('now')
+        """,
+        (sys_name, 1 if int(enabled) else 0),
+    )
     return True
 
 

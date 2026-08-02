@@ -2,6 +2,7 @@ import sqlite3
 from typing import Iterable, List, Tuple
 
 from app.settings import data_path
+from app.services.sqlite_engine import sqlite_service
 
 DB_PATH = data_path("master_data.db")
 SCHEMA_SQL = """
@@ -58,64 +59,36 @@ def _norm_action(action_key: str) -> str:
     return (action_key or "").strip().lower()
 
 
-def add_user(action_key: str, user_id: int) -> None:
-    try:
-        con = _connect()
-        con.execute(
-            "INSERT OR IGNORE INTO security_whitelist_users (action_key, user_id) VALUES (?, ?)",
-            (_norm_action(action_key), int(user_id)),
-        )
-        con.commit(); con.close()
-    except Exception:
-        try:
-            con.close()
-        except Exception:
-            pass
+async def add_user(app_id: str, action_key: str, user_id: int) -> None:
+    await sqlite_service.execute_update(
+        app_id,
+        "INSERT OR IGNORE INTO security_whitelist_users (action_key, user_id) VALUES (?, ?)",
+        (_norm_action(action_key), int(user_id)),
+    )
 
 
-def remove_user(action_key: str, user_id: int) -> None:
-    try:
-        con = _connect()
-        con.execute(
-            "DELETE FROM security_whitelist_users WHERE action_key = ? AND user_id = ?",
-            (_norm_action(action_key), int(user_id)),
-        )
-        con.commit(); con.close()
-    except Exception:
-        try:
-            con.close()
-        except Exception:
-            pass
+async def remove_user(app_id: str, action_key: str, user_id: int) -> None:
+    await sqlite_service.execute_update(
+        app_id,
+        "DELETE FROM security_whitelist_users WHERE action_key = ? AND user_id = ?",
+        (_norm_action(action_key), int(user_id)),
+    )
 
 
-def add_role(action_key: str, role_id: int) -> None:
-    try:
-        con = _connect()
-        con.execute(
-            "INSERT OR IGNORE INTO security_whitelist_roles (action_key, role_id) VALUES (?, ?)",
-            (_norm_action(action_key), int(role_id)),
-        )
-        con.commit(); con.close()
-    except Exception:
-        try:
-            con.close()
-        except Exception:
-            pass
+async def add_role(app_id: str, action_key: str, role_id: int) -> None:
+    await sqlite_service.execute_update(
+        app_id,
+        "INSERT OR IGNORE INTO security_whitelist_roles (action_key, role_id) VALUES (?, ?)",
+        (_norm_action(action_key), int(role_id)),
+    )
 
 
-def remove_role(action_key: str, role_id: int) -> None:
-    try:
-        con = _connect()
-        con.execute(
-            "DELETE FROM security_whitelist_roles WHERE action_key = ? AND role_id = ?",
-            (_norm_action(action_key), int(role_id)),
-        )
-        con.commit(); con.close()
-    except Exception:
-        try:
-            con.close()
-        except Exception:
-            pass
+async def remove_role(app_id: str, action_key: str, role_id: int) -> None:
+    await sqlite_service.execute_update(
+        app_id,
+        "DELETE FROM security_whitelist_roles WHERE action_key = ? AND role_id = ?",
+        (_norm_action(action_key), int(role_id)),
+    )
 
 
 def is_allowed(action_key: str, user_id: int, role_ids: Iterable[int]) -> bool:
@@ -196,126 +169,68 @@ def list_action_whitelist(action_key: str) -> Tuple[List[int], List[int]]:
     return users, roles
 
 
-def add_global_user(user_id: int) -> None:
-    try:
-        con = _connect()
-        con.execute(
-            "INSERT OR IGNORE INTO security_whitelist_global_users (user_id) VALUES (?)",
-            (int(user_id),),
-        )
-        con.commit(); con.close()
-    except Exception:
-        try:
-            con.close()
-        except Exception:
-            pass
+async def add_global_user(app_id: str, user_id: int) -> None:
+    await sqlite_service.execute_update(
+        app_id,
+        "INSERT OR IGNORE INTO security_whitelist_global_users (user_id) VALUES (?)",
+        (int(user_id),),
+    )
 
 
-def remove_global_user(user_id: int) -> None:
-    try:
-        con = _connect()
-        con.execute("DELETE FROM security_whitelist_global_users WHERE user_id = ?", (int(user_id),))
-        con.commit(); con.close()
-    except Exception:
-        try:
-            con.close()
-        except Exception:
-            pass
+async def remove_global_user(app_id: str, user_id: int) -> None:
+    await sqlite_service.execute_update(
+        app_id,
+        "DELETE FROM security_whitelist_global_users WHERE user_id = ?",
+        (int(user_id),),
+    )
 
 
-def add_global_role(role_id: int) -> None:
-    try:
-        con = _connect()
-        con.execute(
-            "INSERT OR IGNORE INTO security_whitelist_global_roles (role_id) VALUES (?)",
-            (int(role_id),),
-        )
-        con.commit(); con.close()
-    except Exception:
-        try:
-            con.close()
-        except Exception:
-            pass
+async def add_global_role(app_id: str, role_id: int) -> None:
+    await sqlite_service.execute_update(
+        app_id,
+        "INSERT OR IGNORE INTO security_whitelist_global_roles (role_id) VALUES (?)",
+        (int(role_id),),
+    )
 
 
-def remove_global_role(role_id: int) -> None:
-    try:
-        con = _connect()
-        con.execute("DELETE FROM security_whitelist_global_roles WHERE role_id = ?", (int(role_id),))
-        con.commit(); con.close()
-    except Exception:
-        try:
-            con.close()
-        except Exception:
-            pass
+async def remove_global_role(app_id: str, role_id: int) -> None:
+    await sqlite_service.execute_update(
+        app_id,
+        "DELETE FROM security_whitelist_global_roles WHERE role_id = ?",
+        (int(role_id),),
+    )
 
 
-def list_global_users() -> List[int]:
-    users: List[int] = []
-    try:
-        con = _connect()
-        cur = con.cursor()
-        for (uid,) in cur.execute(
-            "SELECT user_id FROM security_whitelist_global_users ORDER BY user_id ASC"
-        ).fetchall():
-            users.append(int(uid))
-        con.close()
-    except Exception:
-        try: con.close()
-        except Exception: pass
-    return users
+async def list_global_users(app_id: str) -> List[int]:
+    rows = await sqlite_service.execute_query(
+        app_id, "SELECT user_id FROM security_whitelist_global_users ORDER BY user_id ASC"
+    )
+    return [int(r["user_id"]) for r in rows]
 
 
-def list_global_roles() -> List[int]:
-    roles: List[int] = []
-    try:
-        con = _connect()
-        cur = con.cursor()
-        for (rid,) in cur.execute(
-            "SELECT role_id FROM security_whitelist_global_roles ORDER BY role_id ASC"
-        ).fetchall():
-            roles.append(int(rid))
-        con.close()
-    except Exception:
-        try: con.close()
-        except Exception: pass
-    return roles
+async def list_global_roles(app_id: str) -> List[int]:
+    rows = await sqlite_service.execute_query(
+        app_id, "SELECT role_id FROM security_whitelist_global_roles ORDER BY role_id ASC"
+    )
+    return [int(r["role_id"]) for r in rows]
 
 
-def list_action_users(action_key: str) -> List[int]:
-    users: List[int] = []
-    try:
-        con = _connect()
-        cur = con.cursor()
-        norm_action = _norm_action(action_key)
-        for (uid,) in cur.execute(
-            "SELECT user_id FROM security_whitelist_users WHERE action_key = ? ORDER BY user_id ASC",
-            (norm_action,),
-        ).fetchall():
-            users.append(int(uid))
-        con.close()
-    except Exception:
-        try: con.close()
-        except Exception: pass
-    return users
+async def list_action_users(app_id: str, action_key: str) -> List[int]:
+    rows = await sqlite_service.execute_query(
+        app_id,
+        "SELECT user_id FROM security_whitelist_users WHERE action_key = ? ORDER BY user_id ASC",
+        (_norm_action(action_key),),
+    )
+    return [int(r["user_id"]) for r in rows]
 
 
-def list_action_roles(action_key: str) -> List[int]:
-    roles: List[int] = []
-    try:
-        con = _connect()
-        cur = con.cursor()
-        norm_action = _norm_action(action_key)
-        for (rid,) in cur.execute(
-            "SELECT role_id FROM security_whitelist_roles WHERE action_key = ? ORDER BY role_id ASC",
-            (norm_action,),
-        ).fetchall():
-            roles.append(int(rid))
-        con.close()
-    except Exception:
-        try: con.close()
-        except Exception: pass
-    return roles
+async def list_action_roles(app_id: str, action_key: str) -> List[int]:
+    rows = await sqlite_service.execute_query(
+        app_id,
+        "SELECT role_id FROM security_whitelist_roles WHERE action_key = ? ORDER BY role_id ASC",
+        (_norm_action(action_key),),
+    )
+    return [int(r["role_id"]) for r in rows]
 
 
 def list_global_whitelist() -> Tuple[List[int], List[int]]:
