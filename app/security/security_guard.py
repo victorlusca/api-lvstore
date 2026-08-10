@@ -7,7 +7,7 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from app.core.audit import log_audit
 from app.security.security_whitelist import is_allowed as wl_is_allowed
 from app.settings import data_path
-from app.services.sqlite_engine import sqlite_service
+from app.services.sqlite_engine import sqlite_service, reference_service
 
 DB_PATH = data_path("master_data.db")
 
@@ -866,6 +866,21 @@ def get_action_config(action_key: str) -> Dict[str, Any]:
     return _DB.get_limit_config(action_key)
 
 
+async def _get_guild_id(app_id: str) -> int:
+    """Resolve o guild_id do bot para este app_id, lendo `configuracoes_servidor`
+    (linha única, id=1) em `reference_data.db`. `security_limits` no banco real
+    do bot usa chave composta `(guild_id, system_name)` — ver
+    `APP/utils/security_guard.py::SCHEMA_SQL`, a definição autoritativa (o
+    schema embutido aqui só espelha o formato real para montar as queries).
+    """
+    rows = await reference_service.execute_query(
+        app_id, "SELECT guild_id FROM configuracoes_servidor WHERE id = 1 LIMIT 1"
+    )
+    if not rows or not rows[0].get("guild_id"):
+        raise RuntimeError(f"guild_id não configurado para app_id={app_id!r} (configuracoes_servidor)")
+    return int(rows[0]["guild_id"])
+
+
 async def upsert_action_config(
     app_id: str,
     action_key: str,
@@ -883,17 +898,18 @@ async def upsert_action_config(
     punishment = (punishment_type or "").strip().lower()
     if punishment not in VALID_PUNISHMENTS:
         raise ValueError(f"Tipo de punição inválido: {punishment!r}. Opções: {sorted(VALID_PUNISHMENTS)}")
+    guild_id = await _get_guild_id(app_id)
     await sqlite_service.execute_update(
         app_id,
         """
-        INSERT INTO security_limits (system_name, infraction_limit, punishment_type, updated_at)
-        VALUES (?, ?, ?, datetime('now'))
-        ON CONFLICT(system_name) DO UPDATE SET
+        INSERT INTO security_limits (guild_id, system_name, infraction_limit, punishment_type, updated_at)
+        VALUES (?, ?, ?, ?, datetime('now'))
+        ON CONFLICT(guild_id, system_name) DO UPDATE SET
             infraction_limit=excluded.infraction_limit,
             punishment_type=excluded.punishment_type,
             updated_at=datetime('now')
         """,
-        (sys_name, max(1, int(infraction_limit)), punishment),
+        (guild_id, sys_name, max(1, int(infraction_limit)), punishment),
     )
     await sqlite_service.execute_update(
         app_id,
@@ -908,9 +924,11 @@ async def upsert_action_config(
 
 
 async def list_action_configs(app_id: str) -> List[Dict[str, Any]]:
+    guild_id = await _get_guild_id(app_id)
     rows = await sqlite_service.execute_query(
         app_id,
-        "SELECT system_name, infraction_limit, punishment_type, updated_at FROM security_limits ORDER BY system_name ASC",
+        "SELECT system_name, infraction_limit, punishment_type, updated_at FROM security_limits WHERE guild_id = ? ORDER BY system_name ASC",
+        (guild_id,),
     )
     out: List[Dict[str, Any]] = []
     for row in rows:
