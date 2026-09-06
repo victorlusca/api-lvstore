@@ -63,7 +63,11 @@ async def get_reference_settings(app_id: str, table: str):
 
 @router.put("/settings/{table}/kv", dependencies=[Depends(require_scope("admin:*"))])
 async def update_kv_settings(app_id: str, table: str, update: KVUpdate):
-    kv_tables = {"cargos_gerais", "categorias_gerais", "chats_gerais"}
+    # `calls` e `logs` têm o mesmo formato (id, key_name, value) das demais —
+    # só nunca tinham sido liberadas para escrita, então o painel não conseguia
+    # salvar as abas "Canais de Voz" e "Logs". Adição pura: nada muda para as
+    # tabelas que já eram aceitas.
+    kv_tables = {"cargos_gerais", "categorias_gerais", "chats_gerais", "calls", "logs"}
     if table not in kv_tables:
         raise HTTPException(status_code=400, detail="Esta tabela não é do tipo Chave-Valor")
     

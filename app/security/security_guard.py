@@ -189,26 +189,19 @@ class DatabaseService:
     def __init__(self, db_path: str = DB_PATH):
         self.db_path = db_path
         self._schema_ready = False
-        # Tenta criar o schema no cold-start, mas não bloqueia se falhar
-        # (ex: diretório ainda não existe no primeiro import).
-        # set_limit_config e set_system_enabled re-tentam antes de escrever.
-        try:
-            self.ensure_schema()
-            self._schema_ready = True
-        except Exception as e:
-            import logging
-            logging.getLogger(__name__).warning(
-                f"[SecurityGuard] ensure_schema no __init__ falhou (será re-tentado na primeira escrita): {e}"
-            )
+        # A API NÃO tem banco próprio: os dados de cada bot vivem no .db dele na
+        # Square Cloud e são acessados por `sqlite_service`/`reference_service`,
+        # por app_id. Criar o schema aqui materializava um `data/master_data.db`
+        # local — um banco-sombra que nenhuma rota montada lê, mas que reaparecia
+        # a cada boot mesmo depois de apagado no deploy.
 
     def _connect(self) -> sqlite3.Connection:
-        # Garante que o diretório existe — crítico no cold-start do SquareCloud
-        db_dir = os.path.dirname(os.path.abspath(self.db_path))
-        os.makedirs(db_dir, exist_ok=True)
-        con = sqlite3.connect(self.db_path, timeout=15)
+        # Somente leitura e sem criar arquivo: `sqlite3.connect` normal criaria o
+        # banco local no primeiro acesso. Nenhuma rota montada passa por aqui —
+        # as funções ao vivo usadas por routers/security.py são as async no fim
+        # deste módulo, que vão à Square Cloud pelo app_id.
+        con = sqlite3.connect(f"file:{self.db_path}?mode=ro", uri=True, timeout=15)
         con.row_factory = sqlite3.Row
-        con.execute("PRAGMA journal_mode=WAL")
-        con.execute("PRAGMA synchronous=NORMAL")
         return con
 
     def ensure_schema(self) -> None:

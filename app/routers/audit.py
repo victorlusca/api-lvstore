@@ -65,11 +65,13 @@ async def get_audit_log(
         for row in rows:
             item = dict(row)
             
-            # Mapeamento obrigatório de campos
-            item["feito_em"] = item.pop("created_at")
-            item["nome_sistema"] = item.pop("system_key")
-            item["autor"] = item.pop("actor_discord_id")
-            item["alvo"] = item.pop("target_discord_id")
+            # Mapeamento obrigatório de campos. Com default: em instalações
+            # antigas uma dessas colunas pode não existir, e um KeyError aqui
+            # derrubaria a página inteira de auditoria em vez de omitir o campo.
+            item["feito_em"] = item.pop("created_at", None)
+            item["nome_sistema"] = item.pop("system_key", None)
+            item["autor"] = item.pop("actor_discord_id", None)
+            item["alvo"] = item.pop("target_discord_id", None)
             
             # Campo details_json: parse se válido, senão string original
             details_raw = item.get("details_json")

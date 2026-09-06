@@ -8,3 +8,5 @@ app/routers/__pycache__
 app/schemas/__pycache__
 app/services/__pycache__
 app/security/__pycache__
+
+data

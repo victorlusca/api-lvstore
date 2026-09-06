@@ -36,23 +36,11 @@ CREATE INDEX IF NOT EXISTS idx_sec_g_role ON security_whitelist_global_roles(rol
 
 
 def _connect() -> sqlite3.Connection:
-    con = sqlite3.connect(DB_PATH, timeout=15)
-    con.execute("PRAGMA journal_mode=WAL")
-    con.execute("PRAGMA synchronous=NORMAL")
-    return con
-
-
-def _ensure_schema():
-    try:
-        con = _connect()
-        cur = con.cursor()
-        cur.executescript(SCHEMA_SQL)
-        con.commit(); con.close()
-    except Exception:
-        pass
-
-
-_ensure_schema()
+    # Somente leitura e sem criar arquivo — a API não tem banco próprio. Ver a
+    # mesma observação em app/security/security_guard.py::DatabaseService.
+    # As funções ao vivo (usadas por routers/security.py) são as async abaixo,
+    # que leem/escrevem o .db do bot na Square Cloud pelo app_id.
+    return sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=15)
 
 
 def _norm_action(action_key: str) -> str:
