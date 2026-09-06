@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 from app.auth import require_scope
 from app.services.sqlite_engine import sqlite_service
+from app.responses import com_horas_normalizadas
 from datetime import datetime
 import logging
 
@@ -28,7 +29,9 @@ async def get_all_players(app_id: str):
     LEFT JOIN player_points pts ON p.playerID = pts.game_id
     """
     
-    players = await sqlite_service.execute_query(app_id, query)
+    # `horas_totais` vem do banco do bot em "HH:MM"; normaliza e acrescenta o
+    # equivalente em minutos para o site poder ordenar/formatar sem NaN.
+    players = com_horas_normalizadas(await sqlite_service.execute_query(app_id, query))
     return {"ok": True, "data": players}
 
 @router.get("/{player_id}", dependencies=[Depends(require_scope("admin:*"))])
@@ -50,10 +53,10 @@ async def get_player_by_id(app_id: str, player_id: int):
     WHERE p.id = ?
     """
     
-    results = await sqlite_service.execute_query(app_id, query, (player_id,))
+    results = com_horas_normalizadas(await sqlite_service.execute_query(app_id, query, (player_id,)))
     if not results:
         raise HTTPException(status_code=404, detail="Player not found")
-        
+
     return {"ok": True, "data": results[0]}
 
 class PlayerCreate(BaseModel):

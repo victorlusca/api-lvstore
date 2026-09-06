@@ -3,6 +3,7 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from app.auth import require_scope
 from app.services.sqlite_engine import sqlite_service
+from app.responses import com_horas_normalizadas, horas_hhmm, minutos_de_horas
 from datetime import datetime
 import logging
 
@@ -46,10 +47,12 @@ async def get_ranking_total(app_id: str):
         COALESCE(h.total_hours, 0) as horas_totais
     FROM players p
     LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
-    ORDER BY CAST(COALESCE(h.total_hours, 0) AS REAL) DESC
     """
-    
-    ranking = await sqlite_service.execute_query(app_id, query)
+
+    # A ordenação sai do SQL: `CAST('12:30' AS REAL)` vale 12 — descarta os
+    # minutos e coloca "9:59" acima de "10:00". Ordenar por minutos é exato.
+    ranking = com_horas_normalizadas(await sqlite_service.execute_query(app_id, query))
+    ranking.sort(key=lambda r: r.get("horas_totais_minutos", 0), reverse=True)
     return {"ok": True, "data": ranking}
 
 @router.get("/active", dependencies=[Depends(require_scope("admin:*"))])
@@ -68,10 +71,10 @@ async def get_ranking_active(app_id: str):
     FROM players p
     JOIN active_sessions s ON p.playerID = s.user_id
     LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
-    ORDER BY CAST(COALESCE(h.total_hours, 0) AS REAL) DESC
     """
-    
-    active_players = await sqlite_service.execute_query(app_id, query)
+
+    active_players = com_horas_normalizadas(await sqlite_service.execute_query(app_id, query))
+    active_players.sort(key=lambda r: r.get("horas_totais_minutos", 0), reverse=True)
     return {"ok": True, "data": active_players}
 
 @router.get("/inactive", dependencies=[Depends(require_scope("admin:*"))])
@@ -89,10 +92,10 @@ async def get_ranking_inactive(app_id: str):
     FROM players p
     LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
     WHERE p.playerID NOT IN (SELECT user_id FROM active_sessions)
-    ORDER BY CAST(COALESCE(h.total_hours, 0) AS REAL) DESC
     """
-    
-    inactive_players = await sqlite_service.execute_query(app_id, query)        
+
+    inactive_players = com_horas_normalizadas(await sqlite_service.execute_query(app_id, query))
+    inactive_players.sort(key=lambda r: r.get("horas_totais_minutos", 0), reverse=True)
     return {"ok": True, "data": inactive_players}
 
 @router.get("/supervisors", dependencies=[Depends(require_scope("admin:*"))])
@@ -135,19 +138,27 @@ async def update_ranking_hours(app_id: str, update: RankingUpdate):
     # O usuário informou que a tabela player_total_hours usa o Discord ID como user_id
     target_id = discord_id or game_id
 
-    if update.operacao == "setar":
-        query = "INSERT OR REPLACE INTO player_total_hours (user_id, total_hours) VALUES (?, ?)"
-        params = (target_id, str(update.valor))
-    else: # adicionar
-        query = """
-        INSERT INTO player_total_hours (user_id, total_hours) 
-        VALUES (?, ?)
-        ON CONFLICT(user_id) DO UPDATE SET total_hours = CAST(total_hours AS REAL) + ?
-        """
-        params = (target_id, str(update.valor), update.valor)
-    
-    await sqlite_service.execute_update(app_id, query, params)
-    return {"ok": True, "message": "Horas atualizadas com sucesso"}
+    # `valor` vem do painel em HORAS decimais; o banco do bot guarda "HH:MM".
+    # Gravar o decimal cru fazia o bot ler ZERO — o membro ficava com as horas
+    # no site e nenhuma na hierarquia/upamento.
+    minutos = max(0, int(round(float(update.valor) * 60)))
+
+    if update.operacao != "setar":  # adicionar
+        # Soma feita aqui, não em SQL: `CAST('12:30' AS REAL) + x` descarta os
+        # minutos e corrompe o acumulado.
+        atual = await sqlite_service.execute_query(
+            app_id, "SELECT total_hours FROM player_total_hours WHERE user_id = ?", (target_id,)
+        )
+        if atual:
+            minutos += minutos_de_horas(atual[0].get("total_hours"))
+
+    query = """
+    INSERT INTO player_total_hours (user_id, total_hours)
+    VALUES (?, ?)
+    ON CONFLICT(user_id) DO UPDATE SET total_hours = excluded.total_hours
+    """
+    await sqlite_service.execute_update(app_id, query, (target_id, horas_hhmm(minutos)))
+    return {"ok": True, "message": "Horas atualizadas com sucesso", "total_hours": horas_hhmm(minutos)}
 
 @router.post("/pontos", dependencies=[Depends(require_scope("admin:*"))])
 async def update_ranking_points(app_id: str, update: RankingUpdate):
@@ -212,7 +223,8 @@ async def update_ranking_points(app_id: str, update: RankingUpdate):
 @router.post("/reset-hours", dependencies=[Depends(require_scope("admin:*"))])
 async def reset_ranking_hours(app_id: str):
     audit_log(app_id, "RESET_RANKING_HOURS", "Resetting all player hours")
-    query = "UPDATE player_total_hours SET total_hours = '0'"
+    # "00:00" e não "0": o formato canônico do bot é sempre HH:MM.
+    query = "UPDATE player_total_hours SET total_hours = '00:00'"
     await sqlite_service.execute_update(app_id, query)
     return {"ok": True, "message": "Todas as horas foram zeradas."}
 

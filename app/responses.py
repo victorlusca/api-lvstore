@@ -21,6 +21,56 @@ def json_safe_data(obj: Any) -> Any:
         return {k: json_safe_data(v) for k, v in obj.items()}
     return obj
 
+# ─── Horas acumuladas ─────────────────────────────────────────────────────────
+# O bot é o dono do formato: grava `player_total_hours.total_hours` como "HH:MM"
+# (APP/utils/time_utils.py). A API gravava horas decimais ("150.0"), que o bot
+# lia como ZERO — o membro aparecia com 150h no site e nenhuma na hierarquia.
+# Estas duas funções espelham exatamente as do bot; qualquer divergência aqui
+# recria o bug.
+def minutos_de_horas(valor: Any) -> int:
+    """Converte o valor gravado em minutos.
+
+    "12:30" → 750 · "150.0" → 9000 · "150" → 9000 (sem ":" o valor é em horas).
+    """
+    if valor is None or isinstance(valor, bool):
+        return 0
+    texto = str(valor).strip()
+    if not texto:
+        return 0
+    if ":" in texto:
+        try:
+            partes = texto.split(":")
+            return max(0, int(partes[0]) * 60 + (int(partes[1]) if len(partes) > 1 else 0))
+        except (TypeError, ValueError):
+            return 0
+    try:
+        return max(0, int(round(float(texto) * 60)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def horas_hhmm(minutos: Any) -> str:
+    """Formato canônico gravado no banco do bot: "HH:MM"."""
+    try:
+        total = max(0, int(minutos))
+    except (TypeError, ValueError):
+        total = 0
+    return f"{total // 60:02}:{total % 60:02}"
+
+
+def com_horas_normalizadas(linhas: list, campo: str = "horas_totais") -> list:
+    """Acrescenta `<campo>_minutos` (int) e normaliza `<campo>` para "HH:MM".
+
+    O site passa a ter um número inteiro para ordenar/formatar, em vez de tentar
+    `Number("12:30")` — que dava `NaN` e quebrava a ordenação do ranking.
+    """
+    for linha in linhas:
+        minutos = minutos_de_horas(linha.get(campo))
+        linha[f"{campo}_minutos"] = minutos
+        linha[campo] = horas_hhmm(minutos)
+    return linhas
+
+
 class SafeJSONResponse(JSONResponse):
     """
     Custom JSONResponse que garante que IDs grandes nÃ£o percam precisÃ£o no frontend.
