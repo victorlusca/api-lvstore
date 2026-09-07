@@ -1,7 +1,7 @@
-﻿"""
-rate_limit.py â€” rate limiting por IP com janela deslizante em memÃ³ria.
+"""
+rate_limit.py — rate limiting por IP com janela deslizante em memória.
 
-ConfigurÃ¡vel por grupo de rotas via decorator ou diretamente.
+Configurável por grupo de rotas via decorator ou diretamente.
 """
 import time, os
 from functools import wraps
@@ -9,7 +9,7 @@ from flask import request, jsonify
 
 _STORE: dict = {}   # ip -> [timestamps]
 
-# Limites padrÃ£o (podem ser sobrepostos por env)
+# Limites padrão (podem ser sobrepostos por env)
 _DEFAULTS = {
     "global":     (int(os.environ.get("API_RL_GLOBAL",  "200")), 60),   # 200/min
     "write":      (int(os.environ.get("API_RL_WRITE",    "30")), 60),   # 30 escritas/min

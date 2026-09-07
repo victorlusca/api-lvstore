@@ -1,12 +1,14 @@
 .env
 .venv
-app/clients/__pycache__
-app/__pycache__
-app/core/__pycache__
-app/repositories/__pycache__
-app/routers/__pycache__
-app/schemas/__pycache__
-app/services/__pycache__
-app/security/__pycache__
+.venv-lab
+__pycache__/
+*.pyc
 
+# Bancos de teste: construidos em tempo de execucao a partir de
+# tests/fixtures/schema_*.sql. O que vai para o Git e o .sql, nao o .db.
+tests/fixtures/*.db
+.pytest_cache/
+
+# Dados locais da API. A API le o banco do BOT pela Square Cloud; este
+# diretorio guarda apenas estado proprio e nunca deve ir para o repositorio.
 data

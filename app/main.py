@@ -38,13 +38,13 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Middleware de Auditoria AutomÃ¡tica
+    # Middleware de Auditoria Automática
     @app.middleware("http")
     async def auto_audit_middleware(request: Request, call_next):
         method = request.method
         path = request.url.path
         
-        # SÃ³ auditamos alteraÃ§Ãµes (POST, PUT, DELETE)
+        # Só auditamos alterações (POST, PUT, DELETE)
         if method in ["POST", "PUT", "DELETE"] and not path.endswith("/audit/bot"):
             # Tentar extrair app_id do path
             parts = path.strip("/").split("/")
@@ -55,7 +55,7 @@ def create_app() -> FastAPI:
                 else:
                     app_id = parts[0]
 
-            # Para nÃ£o consumir o corpo definitivamente e quebrar os handlers,
+            # Para não consumir o corpo definitivamente e quebrar os handlers,
             # usamos o receive do Starlette para re-disponibilizar o corpo
             body = None
             if method != "DELETE":
@@ -64,11 +64,13 @@ def create_app() -> FastAPI:
                     if body_bytes:
                         body = json.loads(body_bytes)
                     
-                    # Re-injetar o corpo para que o prÃ³ximo handler possa ler
+                    # Re-injetar o corpo para que o próximo handler possa ler
                     async def receive():
                         return {"type": "http.request", "body": body_bytes}
                     request._receive = receive
-                except:
+                except Exception:
+                    # `except:` nu tambem capturava KeyboardInterrupt/SystemExit,
+                    # o que engolia um shutdown no meio de uma requisicao.
                     body = "[Binary or unparseable]"
 
             # Log inicial

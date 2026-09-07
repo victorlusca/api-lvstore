@@ -1,14 +1,14 @@
 """
-responses.py â€” helpers de resposta padronizada.
+responses.py — helpers de resposta padronizada.
 Auditoria agora em api/audit.py (write_audit).
-MantÃ©m ok()/err() para retrocompatibilidade.
+Mantém ok()/err() para retrocompatibilidade.
 """
 from typing import Any, Optional
 from fastapi.responses import JSONResponse
 
 def json_safe_data(obj: Any) -> Any:
     """
-    Recursivamente converte inteiros que excedem o limite de precisÃ£o do JavaScript
+    Recursivamente converte inteiros que excedem o limite de precisão do JavaScript
     (Number.MAX_SAFE_INTEGER) em strings para evitar problemas no frontend.
     """
     if isinstance(obj, int):
@@ -73,7 +73,7 @@ def com_horas_normalizadas(linhas: list, campo: str = "horas_totais") -> list:
 
 class SafeJSONResponse(JSONResponse):
     """
-    Custom JSONResponse que garante que IDs grandes nÃ£o percam precisÃ£o no frontend.
+    Custom JSONResponse que garante que IDs grandes não percam precisão no frontend.
     """
     def render(self, content: Any) -> bytes:
         return super().render(json_safe_data(content))
@@ -85,13 +85,13 @@ def ok(data: Any = None, message: str = "ok", status: int = 200):
     return body, status
 
 def err(message: str, status: int = 400, details: Any = None):
-    # Nunca expÃµe stack trace ou info interna em produÃ§Ã£o
+    # Nunca expõe stack trace ou info interna em produção
     body = {"ok": False, "error": message}
     if details is not None:
         body["details"] = details
     return body, status
 
-# Legado â€” usado por routes_references/embeds antigos
+# Legado — usado por routes_references/embeds antigos
 def audit(status_code: int, note: str = "") -> None:
     from app.audit import write_audit
     write_audit(status=status_code, message=note)

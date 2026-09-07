@@ -1,16 +1,16 @@
-﻿"""
-validators.py â€” validaÃ§Ã£o forte e governanÃ§a de integridade de dados.
+"""
+validators.py — validação forte e governança de integridade de dados.
 
 Regras por tabela/campo:
   - tipo esperado (int, bool, str)
-  - tamanho mÃ¡ximo
+  - tamanho máximo
   - campos protegidos (leitura apenas via bot)
   - campos que aceitam vazio
 """
 import re
 from typing import Any, Optional, Tuple
 
-# â”€â”€â”€ Campos protegidos (nÃ£o editÃ¡veis via API) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Campos protegidos (não editáveis via API) ────────────────────────────────
 PROTECTED_FIELDS = {
     # Nunca sobrescrever via API (risco de romper o bot)
     "configuracoes_plano": {"premium", "cliente", "vencimento", "pix_copia_e_cola"}, # managed pela LV Store
@@ -18,10 +18,10 @@ PROTECTED_FIELDS = {
                                "pontos_origem_canal"},
 }
 
-# â”€â”€â”€ Tipos e limites por tabela/coluna â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Tipos e limites por tabela/coluna ───────────────────────────────────────
 # Formato: {table: {column: {"type": str|int|bool|snowflake, "max_len": int, "required": bool}}}
 _FIELD_RULES: dict = {
-    # KV tables â€” valor sempre Ã© string no banco
+    # KV tables — valor sempre é string no banco
     "users":           {"*": {"type": "snowflake", "max_len": 20}},
     "cargos_gerais":   {"*": {"type": "snowflake", "max_len": 20}},
     "chats_gerais":    {"*": {"type": "snowflake", "max_len": 20}},
@@ -68,12 +68,12 @@ def _rule(table: str, column: str) -> dict:
 def validate_reference(table: str, column: str, value: Any) -> Tuple[bool, Optional[str]]:
     """
     Valida um valor para table/column.
-    Retorna (True, None) se vÃ¡lido, (False, motivo) se invÃ¡lido.
+    Retorna (True, None) se válido, (False, motivo) se inválido.
     """
-    # ProteÃ§Ã£o de campo
+    # Proteção de campo
     protected = PROTECTED_FIELDS.get(table, set())
     if column in protected:
-        return False, f"Campo '{column}' em '{table}' Ã© gerenciado internamente e nÃ£o pode ser alterado via API."
+        return False, f"Campo '{column}' em '{table}' é gerenciado internamente e não pode ser alterado via API."
 
     rule = _rule(table, column)
     t    = rule.get("type", "str")
@@ -81,7 +81,7 @@ def validate_reference(table: str, column: str, value: Any) -> Tuple[bool, Optio
 
     if t == "snowflake":
         if not _SNOWFLAKE_RE.match(s):
-            return False, f"'{column}' deve ser um ID Discord vÃ¡lido (15-20 dÃ­gitos). Recebido: '{s}'"
+            return False, f"'{column}' deve ser um ID Discord válido (15-20 dígitos). Recebido: '{s}'"
         max_len = rule.get("max_len", 20)
         if len(s) > max_len:
             return False, f"'{column}' excede {max_len} caracteres."
@@ -99,7 +99,7 @@ def validate_reference(table: str, column: str, value: Any) -> Tuple[bool, Optio
             return False, f"'{column}' deve ser <= {mx}. Recebido: {n}"
 
     elif t == "bool":
-        if s.lower() not in {"0","1","true","false","sim","nÃ£o","yes","no","nao"}:
+        if s.lower() not in {"0","1","true","false","sim","não","yes","no","nao"}:
             return False, f"'{column}' deve ser booleano (0/1/true/false). Recebido: '{s}'"
 
     else:  # str
@@ -111,7 +111,7 @@ def validate_reference(table: str, column: str, value: Any) -> Tuple[bool, Optio
 
 
 def validate_embed_payload(body: dict) -> Tuple[bool, Optional[str]]:
-    """ValidaÃ§Ã£o extra de payload de embed alÃ©m da checagem de campos."""
+    """Validação extra de payload de embed além da checagem de campos."""
     if "color" in body:
         try:
             c = int(str(body["color"]), 0)
@@ -121,18 +121,18 @@ def validate_embed_payload(body: dict) -> Tuple[bool, Optional[str]]:
             return False, "color deve ser inteiro (hex ou decimal)"
 
     if "title" in body and len(str(body["title"])) > 256:
-        return False, "title nÃ£o pode exceder 256 caracteres (limite Discord)"
+        return False, "title não pode exceder 256 caracteres (limite Discord)"
     if "description" in body and len(str(body["description"])) > 4096:
-        return False, "description nÃ£o pode exceder 4096 caracteres (limite Discord)"
+        return False, "description não pode exceder 4096 caracteres (limite Discord)"
     if "url" in body:
         u = str(body["url"])
         if u and not (u.startswith("http://") or u.startswith("https://")):
-            return False, "url deve comeÃ§ar com http:// ou https://"
+            return False, "url deve começar com http:// ou https://"
 
     # Valida fields_json se vier como lista
     if "fields_json" in body and isinstance(body["fields_json"], list):
         if len(body["fields_json"]) > 25:
-            return False, "MÃ¡ximo de 25 fields por embed (limite Discord)"
+            return False, "Máximo de 25 fields por embed (limite Discord)"
         for i, f in enumerate(body["fields_json"]):
             if not isinstance(f, dict):
                 return False, f"Field {i} deve ser um objeto"

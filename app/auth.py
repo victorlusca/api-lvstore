@@ -1,5 +1,5 @@
 """
-auth.py â€” autenticaÃ§Ã£o por token com escopos, proteÃ§Ã£o brute-force e multi-token (FastAPI version).
+auth.py — autenticação por token com escopos, proteção brute-force e multi-token (FastAPI version).
 
 Escopos:
   references:read   references:write
@@ -8,7 +8,7 @@ Escopos:
   setup:write       backup:run
   admin:*           (superset de todos)
 """
-import os, sqlite3, secrets, hashlib, time
+import os, sqlite3, secrets, hashlib, time, logging
 from typing import Optional, List, Dict, Any
 from fastapi import Request, HTTPException, Security, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -33,7 +33,14 @@ _bf: dict = {}
 
 security = HTTPBearer()
 
-# â”€â”€â”€ Schema â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+if not settings.API_KEY:
+    logging.getLogger(__name__).critical(
+        "API_KEY nao esta definida no ambiente. A master key esta DESLIGADA e "
+        "somente tokens da tabela api_tokens serao aceitos. Defina API_KEY nas "
+        "variaveis de ambiente da hospedagem para reativar o acesso administrativo."
+    )
+
+# ─── Schema ──────────────────────────────────────────────────────────────────
 def _ensure_token_table() -> None:
     try:
         con = sqlite3.connect(_REFERENCE_DB)
@@ -55,10 +62,18 @@ def _ensure_token_table() -> None:
 
 _ensure_token_table()
 
-# â”€â”€â”€ Brute-force â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Brute-force ─────────────────────────────────────────────────────────────
 def _get_ip(request: Request) -> str:
-    return (request.headers.get("X-Forwarded-For","").split(",")[0].strip()
-            or request.client.host if request.client else "unknown")
+    """IP usado como chave do contador de brute-force.
+
+    NAO usa X-Forwarded-For: esse header e escrito pelo cliente. Chavear o
+    contador por ele permitia zerar o bloqueio a cada tentativa, bastando variar
+    o header — a protecao existia mas nao protegia nada. O IP da conexao e o
+    unico valor que o atacante nao controla. Se um dia houver um proxy reverso
+    confiavel na frente, ele deve ser lido a partir de uma lista de proxies
+    conhecidos, nunca do header cru.
+    """
+    return request.client.host if request.client else "unknown"
 
 def _check_bf(ip: str):
     now = time.time()
@@ -76,7 +91,7 @@ def _log_fail(ip: str):
         _bf[ip][0] += 1
         if now - _bf[ip][1] > _BF_WIN: _bf[ip] = [1, now]
 
-# â”€â”€â”€ Token Validation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Token Validation ────────────────────────────────────────────────────────
 def _load_token_hash() -> Optional[str]:
     try:
         con = sqlite3.connect(_REFERENCE_DB)
@@ -92,11 +107,15 @@ async def validate_token(request: Request, auth: HTTPAuthorizationCredentials = 
     
     token = auth.credentials
     
-    # 1. Verificar se Ã© a Master API_KEY do .env
-    if token == settings.API_KEY:
+    # 1. Master API_KEY vinda do ambiente.
+    #    - Vazia => master key DESLIGADA. Nunca casa com token nenhum.
+    #    - compare_digest em vez de "==": o "==" de strings sai no primeiro byte
+    #      diferente, o que vaza o prefixo correto por tempo de resposta.
+    master = settings.API_KEY or ""
+    if master and secrets.compare_digest(token, master):
         return {"label": "master_key", "scopes": ALL_SCOPES}
 
-    # 2. Verificar no banco de dados de tokens dinÃ¢micos
+    # 2. Verificar no banco de dados de tokens dinâmicos
     h = hashlib.sha256(token.encode()).hexdigest()
     
     try:
@@ -109,7 +128,7 @@ async def validate_token(request: Request, auth: HTTPAuthorizationCredentials = 
         if not row:
             con.close()
             _log_fail(ip)
-            raise HTTPException(status_code=401, detail="Token invÃ¡lido ou expirado")
+            raise HTTPException(status_code=401, detail="Token inválido ou expirado")
         
         # Update last used
         con.execute(
@@ -123,7 +142,7 @@ async def validate_token(request: Request, auth: HTTPAuthorizationCredentials = 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail="Erro interno de autenticaÃ§Ã£o")
+        raise HTTPException(status_code=500, detail="Erro interno de autenticação")
 
 def require_scope(scope: str):
     async def _dependency(info: Dict[str, Any] = Depends(validate_token)):
@@ -131,11 +150,11 @@ def require_scope(scope: str):
         if "admin:*" in scopes:
             return info
         if scope not in scopes:
-            raise HTTPException(status_code=403, detail=f"Escopo '{scope}' necessÃ¡rio")
+            raise HTTPException(status_code=403, detail=f"Escopo '{scope}' necessário")
         return info
     return _dependency
 
-# â”€â”€â”€ Token CRUD (reused from original) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Token CRUD (reused from original) ───────────────────────────────────────
 def generate_token(label: str = "default", scopes: Optional[str] = None) -> str:
     _ensure_token_table()
     if scopes is None:
@@ -143,7 +162,7 @@ def generate_token(label: str = "default", scopes: Optional[str] = None) -> str:
     given = {s.strip() for s in scopes.split(",")}
     invalid = given - ALL_SCOPES
     if invalid:
-        raise ValueError(f"Escopos invÃ¡lidos: {invalid}")
+        raise ValueError(f"Escopos inválidos: {invalid}")
     token = secrets.token_hex(32)
     h = hashlib.sha256(token.encode()).hexdigest()
     try:

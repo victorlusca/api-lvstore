@@ -599,7 +599,7 @@ class DatabaseService:
             con.commit()
             return int(cur.rowcount or 0) > 0
         except Exception:
-            # NÃ£o bloqueia o fluxo caso o registro idempotente falhe.
+            # Não bloqueia o fluxo caso o registro idempotente falhe.
             return True
         finally:
             _safe_close(con)

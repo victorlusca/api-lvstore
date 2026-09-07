@@ -17,7 +17,10 @@ class Settings(BaseSettings):
     SQUARE_CLOUD_APP_ID: str = Field("", validation_alias="SQUARECLOUD_APP_ID")
     
     # Security
-    API_KEY: str = Field("d7442ab236a8757fe98b0af2e36af02f", validation_alias="API_KEY")
+    # Sem valor padrao por design: uma chave-mestra versionada no repositorio da
+    # acesso "admin:*" a quem ler o codigo. Vazia significa "master key desligada"
+    # (ver app/auth.py::validate_token), nunca "aceita qualquer coisa".
+    API_KEY: str = Field("", validation_alias="API_KEY")
     
     # Server
     PORT: int = Field(8000, validation_alias="API_PORT")

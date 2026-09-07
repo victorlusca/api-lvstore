@@ -1,0 +1,4 @@
+# Dependencias usadas apenas para rodar a suite de testes.
+# Instale com:  pip install -r requirements.txt -r requirements-dev.txt
+pytest>=8.0
+pytest-asyncio>=0.23

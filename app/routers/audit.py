@@ -1,8 +1,9 @@
 """
-routes_audit.py â€” Auditoria do bot (logs de aÃ§Ãµes in-game e discord) (FastAPI version).
-Este arquivo expÃµe os logs gravados por utils/audit.py (tabela audit_log no master_data.db).
+routes_audit.py — Auditoria do bot (logs de ações in-game e discord) (FastAPI version).
+Este arquivo expõe os logs gravados por utils/audit.py (tabela audit_log no master_data.db).
 """
 import json
+import logging
 from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from typing import Optional, List, Dict, Any
 from app.auth import require_scope
@@ -11,6 +12,7 @@ from app.services.sqlite_engine import sqlite_service
 
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/bots", tags=["Audit"])
 
 class AuditEvent(BaseModel):
@@ -88,9 +90,15 @@ async def get_audit_log(
             "ok": True,
             "data": data
         }
+    except HTTPException:
+        # Repassa intacto o que as camadas de baixo ja classificaram. Reembrulhar
+        # em 500 transformava um 404 ("banco nao encontrado no app") e um 429
+        # (rate limit da Square Cloud) em "erro interno", escondendo a causa real
+        # e prefixando a mensagem com "500: ". O painel mostrava 500 para tudo.
+        raise
     except Exception as e:
-        # Em caso de erro crítico, retornamos erro 500 para não quebrar a API silenciosamente
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Falha inesperada em GET /bots/{app_id}/audit")
+        raise HTTPException(status_code=500, detail=f"Erro ao ler audit_log: {e}")
 
 @router.post("/{app_id}/audit/write")
 async def create_bot_audit(
@@ -135,6 +143,9 @@ async def create_bot_audit(
         
         res, status_code = ok({"message": "Log registrado no banco remoto com sucesso"})
         return res
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception(f"Falha inesperada em POST /bots/{app_id}/audit/write")
+        raise HTTPException(status_code=500, detail=f"Erro ao gravar audit_log: {e}")
 

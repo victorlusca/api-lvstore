@@ -1,5 +1,5 @@
 """
-helpers.py â€” utilitÃ¡rios compartilhados entre os blueprints da API.
+helpers.py — utilitários compartilhados entre os blueprints da API.
 """
 import sqlite3
 from typing import Optional, Dict, Any
@@ -21,9 +21,9 @@ def ref_con() -> sqlite3.Connection:
 
 
 def resolve_player(discord_id: Optional[int]) -> Dict[str, Any]:
-    """Converte discord_id para {nome, login, game_id}. Retorna fallback se nÃ£o encontrar."""
+    """Converte discord_id para {nome, login, game_id}. Retorna fallback se não encontrar."""
     if not discord_id:
-        return {"nome": "â€”", "login": "â€”", "game_id": None}
+        return {"nome": "—", "login": "—", "game_id": None}
     try:
         con = master_con()
         row = con.execute(
@@ -40,7 +40,7 @@ def resolve_player(discord_id: Optional[int]) -> Dict[str, Any]:
 
 def resolve_player_by_game_id(game_id: Optional[int]) -> Dict[str, Any]:
     if not game_id:
-        return {"nome": "â€”", "login": "â€”", "discord_id": None}
+        return {"nome": "—", "login": "—", "discord_id": None}
     try:
         con = master_con()
         row = con.execute(
