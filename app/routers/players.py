@@ -23,7 +23,7 @@ async def get_all_players(app_id: str):
         p.playerLogin as login, 
         p.playerID as game_id, 
         p.discordUserID as discord_id,
-        COALESCE(h.total_hours, 0) as horas_permanentes,
+        COALESCE(h.total_hours, 0) as horas_totais,
         COALESCE(pts.total_points, 0) as pontos,
         {coluna_bp}
     FROM players p
@@ -47,7 +47,7 @@ async def get_player_by_id(app_id: str, player_id: int):
         p.playerLogin as login, 
         p.playerID as game_id, 
         p.discordUserID as discord_id,
-        COALESCE(h.total_hours, 0) as horas_permanentes,
+        COALESCE(h.total_hours, 0) as horas_totais,
         COALESCE(pts.total_points, 0) as pontos,
         {coluna_bp}
     FROM players p

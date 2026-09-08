@@ -6,8 +6,6 @@ resultante, para que o log de producao possa ser lido como um diagnostico.
 """
 import sqlite3
 
-import pytest
-
 from tests.conftest import APP_ID
 
 

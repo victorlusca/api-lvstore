@@ -72,27 +72,24 @@ def com_horas_normalizadas(linhas: list, campo: str = "horas_totais") -> list:
 
 
 def com_horas_do_bateponto(linhas: list) -> list:
-    """Consolida os DOIS contadores de horas que o bot mantém.
+    """Normaliza os DOIS contadores de horas que o bot mantém.
 
-    - `horas_semana` → `BP_HoursAll`: é o que TODO display do bot mostra (o botão
-      HORAS do bate-ponto, o ranking geral e a lista de inativos). Zera a cada
-      upamento.
-    - `horas_permanentes` → `player_total_hours`: o acumulado histórico. Só muda
-      quando o upamento roda e soma a semana nele.
+    - `horas_semana` → `BP_HoursAll`: o bate-ponto **da semana**. É o número que
+      o botão HORAS do bot mostra, e é zerado pelos resets semanais.
+    - `horas_totais` → `player_total_hours`: o acumulado que **nunca zera**. O
+      bate-ponto credita nele a cada registro, junto com o semanal, então já
+      inclui a semana em andamento. É o valor que a hierarquia e o upamento usam.
 
-    O site mostrava apenas o permanente, então o número nunca batia com o do bot
-    e parecia congelado. `horas_totais` passa a ser a soma — o acumulado real
-    naquele instante — com os dois componentes expostos ao lado.
+    Os dois são somas independentes gravadas pelo bot — a API não recalcula
+    nada, só formata. Somar aqui contaria as mesmas horas duas vezes.
     """
     for linha in linhas:
         semana = minutos_de_horas(linha.get("horas_semana"))
-        permanentes = minutos_de_horas(linha.get("horas_permanentes"))
+        total = minutos_de_horas(linha.get("horas_totais"))
         linha["horas_semana_minutos"] = semana
         linha["horas_semana"] = horas_hhmm(semana)
-        linha["horas_permanentes_minutos"] = permanentes
-        linha["horas_permanentes"] = horas_hhmm(permanentes)
-        linha["horas_totais_minutos"] = semana + permanentes
-        linha["horas_totais"] = horas_hhmm(semana + permanentes)
+        linha["horas_totais_minutos"] = total
+        linha["horas_totais"] = horas_hhmm(total)
     return linhas
 
 
