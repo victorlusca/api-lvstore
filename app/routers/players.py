@@ -2,8 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 from typing import List, Optional
 from app.auth import require_scope
-from app.services.sqlite_engine import sqlite_service
-from app.responses import com_horas_normalizadas
+from app.services.sqlite_engine import sqlite_service, join_bateponto
+from app.responses import com_horas_do_bateponto
 from datetime import datetime
 import logging
 
@@ -15,45 +15,49 @@ router = APIRouter(prefix="/bots/{app_id}/players", tags=["Players"])
 async def get_all_players(app_id: str):
     audit_log(app_id, "GET_PLAYERS", "Fetching all players with hours and points")
     
-    query = """
+    coluna_bp, join_bp = await join_bateponto(app_id)
+    query = f"""
     SELECT 
         p.id, 
         p.playerName as nome, 
         p.playerLogin as login, 
         p.playerID as game_id, 
         p.discordUserID as discord_id,
-        COALESCE(h.total_hours, 0) as horas_totais,
-        COALESCE(pts.total_points, 0) as pontos
+        COALESCE(h.total_hours, 0) as horas_permanentes,
+        COALESCE(pts.total_points, 0) as pontos,
+        {coluna_bp}
     FROM players p
     LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
     LEFT JOIN player_points pts ON p.playerID = pts.game_id
+    {join_bp}
     """
-    
-    # `horas_totais` vem do banco do bot em "HH:MM"; normaliza e acrescenta o
-    # equivalente em minutos para o site poder ordenar/formatar sem NaN.
-    players = com_horas_normalizadas(await sqlite_service.execute_query(app_id, query))
+
+    players = com_horas_do_bateponto(await sqlite_service.execute_query(app_id, query))
     return {"ok": True, "data": players}
 
 @router.get("/{player_id}", dependencies=[Depends(require_scope("admin:*"))])
 async def get_player_by_id(app_id: str, player_id: int):
     audit_log(app_id, "GET_PLAYER_DETAIL", f"Player ID: {player_id}")
     
-    query = """
+    coluna_bp, join_bp = await join_bateponto(app_id)
+    query = f"""
     SELECT 
         p.id, 
         p.playerName as nome, 
         p.playerLogin as login, 
         p.playerID as game_id, 
         p.discordUserID as discord_id,
-        COALESCE(h.total_hours, 0) as horas_totais,
-        COALESCE(pts.total_points, 0) as pontos
+        COALESCE(h.total_hours, 0) as horas_permanentes,
+        COALESCE(pts.total_points, 0) as pontos,
+        {coluna_bp}
     FROM players p
     LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
     LEFT JOIN player_points pts ON p.playerID = pts.game_id
+    {join_bp}
     WHERE p.id = ?
     """
-    
-    results = com_horas_normalizadas(await sqlite_service.execute_query(app_id, query, (player_id,)))
+
+    results = com_horas_do_bateponto(await sqlite_service.execute_query(app_id, query, (player_id,)))
     if not results:
         raise HTTPException(status_code=404, detail="Player not found")
 

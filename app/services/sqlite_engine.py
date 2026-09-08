@@ -189,6 +189,20 @@ class SQLiteService:
         finally:
             self._cleanup(tmp_dir)
 
+    async def table_exists(self, app_id: str, table: str) -> bool:
+        """Se a tabela existe no banco do bot.
+
+        Instalações antigas podem não ter tabelas criadas em versões recentes do
+        bot; um `LEFT JOIN` numa tabela ausente derruba a query inteira. Usa o
+        mesmo snapshot em cache, então não custa download extra.
+        """
+        linhas = await self.execute_query(
+            app_id,
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1",
+            (table,),
+        )
+        return bool(linhas)
+
     async def execute_update(self, app_id: str, query: str, params: tuple = ()):
         tmp_dir, db_path, tinha_wal = await self._download_snapshot(app_id, force=True)
         if not db_path:
@@ -270,6 +284,21 @@ class SQLiteService:
             return True
         finally:
             self._cleanup(tmp_dir)
+
+async def join_bateponto(app_id: str) -> tuple:
+    """(coluna, join) para trazer as horas da SEMANA junto das permanentes.
+
+    `BP_HoursAll` é a tabela que TODO display de horas do bot lê (botão HORAS,
+    ranking geral, inativos). Instalações antigas podem não tê-la — sem o teste
+    de existência, o LEFT JOIN derrubaria a rota inteira.
+    """
+    if await sqlite_service.table_exists(app_id, "BP_HoursAll"):
+        return (
+            "COALESCE(bp.total_hours, 0) as horas_semana",
+            "LEFT JOIN BP_HoursAll bp ON p.discordUserID = bp.user_id",
+        )
+    return ("'00:00' as horas_semana", "")
+
 
 sqlite_service = SQLiteService(db_filename="master_data.db")
 reference_service = SQLiteService(db_filename="reference_data.db")

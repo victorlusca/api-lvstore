@@ -2,14 +2,15 @@ from fastapi import APIRouter, Depends, HTTPException, Body
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 from app.auth import require_scope
-from app.services.sqlite_engine import sqlite_service
-from app.responses import com_horas_normalizadas, horas_hhmm, minutos_de_horas
+from app.services.sqlite_engine import sqlite_service, join_bateponto
+from app.responses import com_horas_do_bateponto, horas_hhmm, minutos_de_horas
 from datetime import datetime
 import logging
 
 from app.core.audit import audit_log
 
 router = APIRouter(prefix="/bots/{app_id}/ranking", tags=["Ranking"])
+
 
 class RankingUpdate(BaseModel):
     discord_id: Optional[str] = None
@@ -38,20 +39,23 @@ async def get_ranking_points(app_id: str):
 async def get_ranking_total(app_id: str):
     audit_log(app_id, "GET_RANKING_TOTAL", "Fetching all players by total hours")
     
-    query = """
+    coluna_bp, join_bp = await join_bateponto(app_id)
+    query = f"""
     SELECT 
         p.playerName as nome,
         p.playerLogin as login,
         p.playerID as game_id,
         p.discordUserID as discord_id,
-        COALESCE(h.total_hours, 0) as horas_totais
+        COALESCE(h.total_hours, 0) as horas_permanentes,
+        {coluna_bp}
     FROM players p
     LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
+    {join_bp}
     """
 
     # A ordenação sai do SQL: `CAST('12:30' AS REAL)` vale 12 — descarta os
     # minutos e coloca "9:59" acima de "10:00". Ordenar por minutos é exato.
-    ranking = com_horas_normalizadas(await sqlite_service.execute_query(app_id, query))
+    ranking = com_horas_do_bateponto(await sqlite_service.execute_query(app_id, query))
     ranking.sort(key=lambda r: r.get("horas_totais_minutos", 0), reverse=True)
     return {"ok": True, "data": ranking}
 
@@ -59,21 +63,28 @@ async def get_ranking_total(app_id: str):
 async def get_ranking_active(app_id: str):
     audit_log(app_id, "GET_RANKING_ACTIVE", "Fetching active players (in sessions)")
     
-    # Jogadores ativos são aqueles que possuem uma entrada na tabela active_sessions
-    query = """
+    # Jogadores com uma sessão de bate-ponto aberta agora (`active_sessions`).
+    # O JOIN é por `discordUserID`: o bot grava `active_sessions.user_id` com o ID
+    # do Discord (`interaction.user.id`), não com o ID do jogo. Cruzar com
+    # `playerID` nunca casava — a rota devolvia lista vazia mesmo com gente em
+    # ponto aberto, e a de inativos devolvia todo mundo.
+    coluna_bp, join_bp = await join_bateponto(app_id)
+    query = f"""
     SELECT 
         p.playerName as nome,
         p.playerLogin as login,
         p.playerID as game_id,
         p.discordUserID as discord_id,
-        COALESCE(h.total_hours, 0) as horas_totais,
-        s.status as sessao_status
+        COALESCE(h.total_hours, 0) as horas_permanentes,
+        s.status as sessao_status,
+        {coluna_bp}
     FROM players p
-    JOIN active_sessions s ON p.playerID = s.user_id
+    JOIN active_sessions s ON p.discordUserID = s.user_id
     LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
+    {join_bp}
     """
 
-    active_players = com_horas_normalizadas(await sqlite_service.execute_query(app_id, query))
+    active_players = com_horas_do_bateponto(await sqlite_service.execute_query(app_id, query))
     active_players.sort(key=lambda r: r.get("horas_totais_minutos", 0), reverse=True)
     return {"ok": True, "data": active_players}
 
@@ -81,20 +92,23 @@ async def get_ranking_active(app_id: str):
 async def get_ranking_inactive(app_id: str):
     audit_log(app_id, "GET_RANKING_INACTIVE", "Fetching inactive players (not in sessions)")
     
-    # Jogadores inativos são aqueles que NÃO possuem entrada na tabela active_sessions
-    query = """
+    # Sem sessão de bate-ponto aberta. Mesma correção de ID da rota /active.
+    coluna_bp, join_bp = await join_bateponto(app_id)
+    query = f"""
     SELECT 
         p.playerName as nome,
         p.playerLogin as login,
         p.playerID as game_id,
         p.discordUserID as discord_id,
-        COALESCE(h.total_hours, 0) as horas_totais
+        COALESCE(h.total_hours, 0) as horas_permanentes,
+        {coluna_bp}
     FROM players p
     LEFT JOIN player_total_hours h ON p.discordUserID = h.user_id
-    WHERE p.playerID NOT IN (SELECT user_id FROM active_sessions)
+    {join_bp}
+    WHERE p.discordUserID NOT IN (SELECT user_id FROM active_sessions)
     """
 
-    inactive_players = com_horas_normalizadas(await sqlite_service.execute_query(app_id, query))
+    inactive_players = com_horas_do_bateponto(await sqlite_service.execute_query(app_id, query))
     inactive_players.sort(key=lambda r: r.get("horas_totais_minutos", 0), reverse=True)
     return {"ok": True, "data": inactive_players}
 

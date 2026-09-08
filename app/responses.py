@@ -71,6 +71,31 @@ def com_horas_normalizadas(linhas: list, campo: str = "horas_totais") -> list:
     return linhas
 
 
+def com_horas_do_bateponto(linhas: list) -> list:
+    """Consolida os DOIS contadores de horas que o bot mantém.
+
+    - `horas_semana` → `BP_HoursAll`: é o que TODO display do bot mostra (o botão
+      HORAS do bate-ponto, o ranking geral e a lista de inativos). Zera a cada
+      upamento.
+    - `horas_permanentes` → `player_total_hours`: o acumulado histórico. Só muda
+      quando o upamento roda e soma a semana nele.
+
+    O site mostrava apenas o permanente, então o número nunca batia com o do bot
+    e parecia congelado. `horas_totais` passa a ser a soma — o acumulado real
+    naquele instante — com os dois componentes expostos ao lado.
+    """
+    for linha in linhas:
+        semana = minutos_de_horas(linha.get("horas_semana"))
+        permanentes = minutos_de_horas(linha.get("horas_permanentes"))
+        linha["horas_semana_minutos"] = semana
+        linha["horas_semana"] = horas_hhmm(semana)
+        linha["horas_permanentes_minutos"] = permanentes
+        linha["horas_permanentes"] = horas_hhmm(permanentes)
+        linha["horas_totais_minutos"] = semana + permanentes
+        linha["horas_totais"] = horas_hhmm(semana + permanentes)
+    return linhas
+
+
 class SafeJSONResponse(JSONResponse):
     """
     Custom JSONResponse que garante que IDs grandes não percam precisão no frontend.
