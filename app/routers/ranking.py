@@ -153,7 +153,8 @@ async def update_ranking_hours(app_id: str, update: RankingUpdate):
     target_id = discord_id or game_id
 
     # Ajusta o acumulado TOTAL (`player_total_hours`) — o valor que a hierarquia
-    # e o upamento usam. Para o contador da semana existe `/ranking/horas-semana`.
+    # e o upamento usam. Edição direta: não soma nem desconta a semana. Para o
+    # contador semanal existe `/ranking/horas-semana`.
     # `valor` vem do painel em HORAS decimais; o banco do bot guarda "HH:MM".
     # Gravar o decimal cru fazia o bot ler ZERO — o membro ficava com as horas
     # no site e nenhuma na hierarquia/upamento.
@@ -236,16 +237,6 @@ async def update_ranking_points(app_id: str, update: RankingUpdate):
         logging.error(f"Erro fatal ao atualizar pontos: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Erro ao salvar no banco de dados: {str(e)}")
 
-@router.post("/reset-hours", dependencies=[Depends(require_scope("admin:*"))])
-async def reset_ranking_hours(app_id: str):
-    """Zera o acumulado TOTAL de todos. Não confundir com `/reset-weekly`, que
-    zera só o bate-ponto da semana."""
-    audit_log(app_id, "RESET_RANKING_HOURS", "Resetting all player TOTAL hours")
-    # "00:00" e não "0": o formato canônico do bot é sempre HH:MM.
-    query = "UPDATE player_total_hours SET total_hours = '00:00'"
-    await sqlite_service.execute_update(app_id, query)
-    return {"ok": True, "message": "Todas as horas foram zeradas."}
-
 @router.post("/horas-semana", dependencies=[Depends(require_scope("admin:*"))])
 async def update_weekly_hours(app_id: str, update: RankingUpdate):
     """Ajusta as horas da SEMANA (`BP_HoursAll`) — o contador do bate-ponto.
@@ -290,18 +281,75 @@ async def update_weekly_hours(app_id: str, update: RankingUpdate):
     return {"ok": True, "message": "Horas da semana atualizadas", "horas_semana": horas_hhmm(minutos)}
 
 
-@router.post("/reset-weekly", dependencies=[Depends(require_scope("admin:*"))])
-async def reset_weekly_hours(app_id: str):
-    """Zera as horas da semana de TODOS — equivale ao 'RESETAR HORAS' do bot.
+class WeeklyReset(BaseModel):
+    """Alvo opcional do fechamento de semana. Sem nenhum ID, fecha para todos."""
+    discord_id: Optional[str] = None
+    game_id: Optional[str] = None
 
-    O acumulado total permanece: as horas já foram creditadas nele quando foram
-    registradas.
+
+@router.post("/reset-weekly", dependencies=[Depends(require_scope("admin:*"))])
+async def reset_weekly_hours(app_id: str, alvo: Optional[WeeklyReset] = None):
+    """Fecha a semana: **soma** as horas semanais no total e zera o semanal.
+
+    É o único momento em que a semana entra no acumulado — equivale ao
+    `bateponto.fechar_semana()` do bot. Fora daqui, só a edição pelo painel
+    escreve em `player_total_hours`.
+
+    Sem corpo (ou sem IDs), fecha a semana de todos.
     """
-    audit_log(app_id, "RESET_WEEKLY_HOURS", "Resetting weekly bate-ponto hours")
+    audit_log(app_id, "RESET_WEEKLY_HOURS", f"Closing weekly hours | alvo={alvo}")
     if not await sqlite_service.table_exists(app_id, "BP_HoursAll"):
         raise HTTPException(status_code=409, detail="Bate-ponto ainda não inicializado neste bot.")
-    await sqlite_service.execute_update(app_id, "UPDATE BP_HoursAll SET total_hours = '00:00'")
-    return {"ok": True, "message": "Horas da semana zeradas."}
+
+    discord_id = alvo.discord_id if alvo else None
+    if alvo and not discord_id and alvo.game_id:
+        achado = await sqlite_service.execute_query(
+            app_id, "SELECT discordUserID FROM players WHERE playerID = ?", (alvo.game_id,)
+        )
+        if not achado:
+            raise HTTPException(status_code=404, detail="Jogador não encontrado para esse game_id")
+        discord_id = achado[0].get("discordUserID")
+
+    if discord_id:
+        semanais = await sqlite_service.execute_query(
+            app_id,
+            "SELECT user_id, total_hours FROM BP_HoursAll WHERE user_id = ?",
+            (discord_id,),
+        )
+    else:
+        semanais = await sqlite_service.execute_query(
+            app_id, "SELECT user_id, total_hours FROM BP_HoursAll"
+        )
+
+    totais = {
+        str(linha["user_id"]): minutos_de_horas(linha.get("total_hours"))
+        for linha in await sqlite_service.execute_query(
+            app_id, "SELECT user_id, total_hours FROM player_total_hours"
+        )
+    }
+
+    fechados = 0
+    for linha in semanais:
+        minutos = minutos_de_horas(linha.get("total_hours"))
+        uid = linha.get("user_id")
+        if minutos > 0:
+            novo = totais.get(str(uid), 0) + minutos
+            await sqlite_service.execute_update(
+                app_id,
+                "INSERT INTO player_total_hours (user_id, total_hours) VALUES (?, ?) "
+                "ON CONFLICT(user_id) DO UPDATE SET total_hours = excluded.total_hours",
+                (uid, horas_hhmm(novo)),
+            )
+            fechados += 1
+
+    if discord_id:
+        await sqlite_service.execute_update(
+            app_id, "UPDATE BP_HoursAll SET total_hours = '00:00' WHERE user_id = ?", (discord_id,)
+        )
+    else:
+        await sqlite_service.execute_update(app_id, "UPDATE BP_HoursAll SET total_hours = '00:00'")
+
+    return {"ok": True, "message": f"Semana fechada para {fechados} membro(s).", "fechados": fechados}
 
 
 @router.post("/reset-points", dependencies=[Depends(require_scope("admin:*"))])
