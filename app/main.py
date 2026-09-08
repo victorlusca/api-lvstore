@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 import logging
 
 from app.core.config import settings
-from app.routers import bots, players, ranking, management, system, edital, embeds, transcripts, audit, security
+from app.routers import bots, players, ranking, management, system, edital, embeds, transcripts, audit, security, discord
 from app.core.exceptions import TranscriptException
 from app.responses import SafeJSONResponse
 from app.core.audit import audit_log
@@ -95,6 +95,7 @@ def create_app() -> FastAPI:
     app.include_router(transcripts.router)
     app.include_router(audit.router)
     app.include_router(security.router)
+    app.include_router(discord.router)
 
     @app.exception_handler(TranscriptException)
     async def transcript_exception_handler(request: Request, exc: TranscriptException):
