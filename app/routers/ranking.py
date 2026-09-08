@@ -128,6 +128,61 @@ async def get_ranking_supervisors(app_id: str):
     data = await sqlite_service.execute_query(app_id, query)
     return {"ok": True, "data": data}
 
+
+class SupervisorReset(BaseModel):
+    discord_id: str
+
+
+@router.post("/supervisors/reset", dependencies=[Depends(require_scope("admin:*"))])
+async def reset_supervisor_metrics(app_id: str, item: SupervisorReset):
+    """Zera os contadores de um superior em `staff_actions_summary`.
+
+    Escrita contida na tabela de métricas: não mexe em cargo, mensagem nem em
+    nada do Discord, então não há estado divergente a reconciliar. A linha é
+    mantida (com tudo em zero) em vez de apagada — o bot faz `INSERT OR UPDATE`
+    por `discord_user_id` e recriar a linha depois seria idêntico.
+    """
+    audit_log(app_id, "RESET_SUPERVISOR_METRICS", f"Discord: {item.discord_id}")
+
+    # O ID chega como string (snowflake não cabe no Number do JavaScript), mas a
+    # coluna é INTEGER: comparar sem converter depende da afinidade do SQLite.
+    try:
+        discord_id = int(str(item.discord_id).strip())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="discord_id inválido.")
+
+    existe = await sqlite_service.execute_query(
+        app_id,
+        "SELECT id FROM staff_actions_summary WHERE discord_user_id = ?",
+        (discord_id,),
+    )
+    if not existe:
+        raise HTTPException(status_code=404, detail="Superior não encontrado no ranking.")
+
+    await sqlite_service.execute_update(
+        app_id,
+        """
+        UPDATE staff_actions_summary SET
+            tickets_atendidos = 0,
+            advertencias_aplicadas = 0,
+            exoneracoes_aplicadas = 0,
+            recrutamentos_qtd = 0,
+            transferencias_aprovadas = 0,
+            transferencias_recusadas = 0,
+            transfs_aceitas = 0,
+            transfs_recusadas = 0,
+            avaliacoes_qtd = 0,
+            media_estrelas = 0.0,
+            media_avaliacoes = 0.0,
+            pontos_totais = 0,
+            updated_at = datetime('now','localtime')
+        WHERE discord_user_id = ?
+        """,
+        (discord_id,),
+    )
+    return {"ok": True, "message": "Métricas zeradas"}
+
+
 @router.post("/horas", dependencies=[Depends(require_scope("admin:*"))])
 async def update_ranking_hours(app_id: str, update: RankingUpdate):
     audit_log(app_id, "UPDATE_RANKING_HOURS", f"Player: {update.game_id} | Discord: {update.discord_id} | Op: {update.operacao} | Val: {update.valor}")
