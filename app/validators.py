@@ -32,8 +32,12 @@ _FIELD_RULES: dict = {
     "configuracoes_organizacao": {
         "sigla":       {"type": "str", "max_len": 20},
         "nome":        {"type": "str", "max_len": 100},
-        "tag":         {"type": "str", "max_len": 10},
-        "tag_change":  {"type": "str", "max_len": 10},
+        # `tag` e `tag_change` são TEMPLATES de apelido, não a sigla. O limite de
+        # 10 vinha de quando guardavam só "LV"; hoje guardam algo como
+        # "「{cargo}」{player_name}「{game_id}」" (36 caracteres), que não caberia.
+        # O apelido montado é truncado em 32 pelo próprio `build_nickname`.
+        "tag":         {"type": "str", "max_len": 100},
+        "tag_change":  {"type": "str", "max_len": 100},
         "tipo":        {"type": "str", "max_len": 50},
         "mudar_tag":   {"type": "bool"},
     },
