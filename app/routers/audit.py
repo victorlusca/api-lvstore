@@ -6,6 +6,7 @@ import json
 import logging
 from fastapi import APIRouter, Request, HTTPException, Depends, Query
 from typing import Optional, List, Dict, Any
+from app.audit import agora_sao_paulo
 from app.auth import require_scope
 from app.responses import ok, err
 from app.services.sqlite_engine import sqlite_service
@@ -112,17 +113,21 @@ async def create_bot_audit(
     try:
         query = """
             INSERT INTO audit_log (
-                event_type, system_key, action_key, 
-                actor_discord_id, actor_name, 
-                target_discord_id, target_game_id, target_name, 
-                details_json, status, message, 
+                created_at,
+                event_type, system_key, action_key,
+                actor_discord_id, actor_name,
+                target_discord_id, target_game_id, target_name,
+                details_json, status, message,
                 bot_id, source, severity
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        
+
         details_json = json.dumps(event.details) if event.details else None
-        
+
+        # Sem isto o horário vinha do DEFAULT da coluna, avaliado NESTE
+        # container (UTC) — e o painel mostra a string crua, sem converter.
         params = (
+            agora_sao_paulo(),
             event.event_type,
             event.system_key,
             event.action_key,

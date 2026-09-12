@@ -1,5 +1,5 @@
 ﻿"""
-routes_setup.py â€” geraÃ§Ã£o e gestÃ£o de tokens com escopos (FastAPI version).
+routes_setup.py — geração e gestão de tokens com escopos (FastAPI version).
 """
 import os
 from fastapi import APIRouter, Request, Header, HTTPException, Depends
@@ -20,7 +20,7 @@ def _check_setup_key(x_setup_key: Optional[str] = Header(None)):
 async def create_token(request: Request, x_setup_key: Optional[str] = Header(None)):
     """
     Bootstrap: gera token na primeira vez (sem auth).
-    RotaÃ§Ã£o: requer X-Setup-Key se API_SETUP_KEY estiver definida, ou escopo setup:write.
+    Rotação: requer X-Setup-Key se API_SETUP_KEY estiver definida, ou escopo setup:write.
     """
     has_existing = _load_token_hash() is not None
 
@@ -31,20 +31,20 @@ async def create_token(request: Request, x_setup_key: Optional[str] = Header(Non
             # Tenta validar token via Authorization header se existir
             auth_header = request.headers.get("Authorization")
             if not auth_header:
-                raise HTTPException(status_code=403, detail="Token jÃ¡ existe. ForneÃ§a X-Setup-Key ou token com escopo setup:write.")
+                raise HTTPException(status_code=403, detail="Token já existe. Forneça X-Setup-Key ou token com escopo setup:write.")
             
             try:
-                # ImportaÃ§Ã£o local para evitar circular dependÃªncia se houver
+                # Importação local para evitar circular dependência se houver
                 from app.auth import validate_token
                 from fastapi.security import HTTPAuthorizationCredentials
-                # SimulaÃ§Ã£o manual de validaÃ§Ã£o de token para este caso especial
+                # Simulação manual de validação de token para este caso especial
                 scheme, credentials = auth_header.split()
                 info = await validate_token(request, HTTPAuthorizationCredentials(scheme=scheme, credentials=credentials))
                 if "admin:*" not in info["scopes"] and "setup:write" not in info["scopes"]:
-                    raise HTTPException(status_code=403, detail="Escopo 'setup:write' necessÃ¡rio para rotacionar token")
+                    raise HTTPException(status_code=403, detail="Escopo 'setup:write' necessário para rotacionar token")
             except Exception as e:
                 if isinstance(e, HTTPException): raise e
-                raise HTTPException(status_code=403, detail="Token invÃ¡lido ou insuficiente")
+                raise HTTPException(status_code=403, detail="Token inválido ou insuficiente")
 
     body = await request.json() if await request.body() else {}
     label = str(body.get("label", "default"))[:64]
@@ -53,7 +53,7 @@ async def create_token(request: Request, x_setup_key: Optional[str] = Header(Non
     # Valida escopos
     given = {s.strip() for s in scopes.split(",")}
     if not given.issubset(ALL_SCOPES):
-        raise HTTPException(status_code=400, detail=f"Escopos invÃ¡lidos: {given - ALL_SCOPES}")
+        raise HTTPException(status_code=400, detail=f"Escopos inválidos: {given - ALL_SCOPES}")
 
     try:
         token = generate_token(label=label, scopes=scopes)
@@ -64,7 +64,7 @@ async def create_token(request: Request, x_setup_key: Optional[str] = Header(Non
                 message=f"Token gerado com escopos: {scopes}")
     
     res, status = ok({"token": token, "label": label, "scopes": list(given)},
-                    "Token gerado. Guarde em local seguro â€” nÃ£o serÃ¡ exibido novamente.", 201)
+                    "Token gerado. Guarde em local seguro — não será exibido novamente.", 201)
     return res
 
 @router.delete("/setup/token/{label}")

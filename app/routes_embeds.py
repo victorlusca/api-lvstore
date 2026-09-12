@@ -1,5 +1,5 @@
 ﻿"""
-routes_embeds.py â€” CRUD de embeds com escopos, validaÃ§Ã£o forte e auditoria (FastAPI version).
+routes_embeds.py — CRUD de embeds com escopos, validação forte e auditoria (FastAPI version).
 """
 import json, sqlite3, os
 from fastapi import APIRouter, Request, HTTPException, Depends

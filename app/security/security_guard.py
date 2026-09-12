@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import sqlite3
@@ -85,6 +86,11 @@ DEFAULT_PUNISHMENTS: Dict[str, str] = {
 
 VALID_PUNISHMENTS = {"kick", "ban", "remove_roles"}
 ACTION_KEYS: Tuple[str, ...] = tuple(SYSTEM_TO_ACTION.values())
+
+# Pausas entre as tentativas de conferir a gravação (a última é 0: não espera
+# depois da leitura final). Somam ~4s no pior caso — só pagos quando a leitura
+# vem defasada; quando vem em dia, a primeira tentativa já confirma.
+_ESPERAS_CONFERENCIA: Tuple[float, ...] = (0.5, 1.0, 2.0, 0)
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS security_systems (
     system_name TEXT PRIMARY KEY,
@@ -892,28 +898,106 @@ async def upsert_action_config(
     if punishment not in VALID_PUNISHMENTS:
         raise ValueError(f"Tipo de punição inválido: {punishment!r}. Opções: {sorted(VALID_PUNISHMENTS)}")
     guild_id = await _get_guild_id(app_id)
-    await sqlite_service.execute_update(
+    limite = max(1, int(infraction_limit))
+    ativo = 1 if int(is_enabled) else 0
+
+    # As DUAS instruções num só ciclo: o banco é um arquivo inteiro baixado e
+    # republicado, então duas chamadas separadas se sobrescrevem (ver
+    # `execute_update_many`). Era esse o motivo de a punição escolhida no site
+    # voltar para `remove_roles` sozinha.
+    await sqlite_service.execute_update_many(
         app_id,
-        """
-        INSERT INTO security_limits (guild_id, system_name, infraction_limit, punishment_type, updated_at)
-        VALUES (?, ?, ?, ?, datetime('now'))
-        ON CONFLICT(guild_id, system_name) DO UPDATE SET
-            infraction_limit=excluded.infraction_limit,
-            punishment_type=excluded.punishment_type,
-            updated_at=datetime('now')
-        """,
-        (guild_id, sys_name, max(1, int(infraction_limit)), punishment),
+        [
+            (
+                """
+                INSERT INTO security_limits (guild_id, system_name, infraction_limit, punishment_type, updated_at)
+                VALUES (?, ?, ?, ?, datetime('now'))
+                ON CONFLICT(guild_id, system_name) DO UPDATE SET
+                    infraction_limit=excluded.infraction_limit,
+                    punishment_type=excluded.punishment_type,
+                    updated_at=datetime('now')
+                """,
+                (guild_id, sys_name, limite, punishment),
+            ),
+            (
+                """
+                INSERT INTO security_systems (system_name, enabled, updated_at)
+                VALUES (?, ?, datetime('now'))
+                ON CONFLICT(system_name) DO UPDATE SET enabled=excluded.enabled, updated_at=datetime('now')
+                """,
+                (sys_name, ativo),
+            ),
+        ],
     )
-    await sqlite_service.execute_update(
-        app_id,
-        """
-        INSERT INTO security_systems (system_name, enabled, updated_at)
-        VALUES (?, ?, datetime('now'))
-        ON CONFLICT(system_name) DO UPDATE SET enabled=excluded.enabled, updated_at=datetime('now')
-        """,
-        (sys_name, 1 if int(is_enabled) else 0),
+
+    # Confere no banco o que acabou de subir. Sem isto a rota respondia "atualizado
+    # com sucesso" sem nunca olhar o resultado — e o GET seguinte lia do cache de
+    # snapshot que a própria escrita populou, então o site mostrava o valor novo
+    # mesmo quando o bot tinha ficado com o antigo. É exatamente essa a queixa de
+    # "troquei para Kick e ele só removeu os cargos".
+    await _verificar_config_gravada(
+        app_id, guild_id, sys_name, limite=limite, punishment=punishment, ativo=ativo
     )
     return True
+
+
+async def _verificar_config_gravada(
+    app_id: str,
+    guild_id: int,
+    sys_name: str,
+    *,
+    limite: int,
+    punishment: str,
+    ativo: int,
+) -> None:
+    """Relê do banco (sem cache) e confirma que a configuração é a pedida.
+
+    `force=True` é obrigatório: o cache de snapshot guarda os bytes que a escrita
+    acabou de publicar, então uma leitura normal confirmaria a si mesma.
+
+    Repete enquanto divergir, porque a leitura é eventualmente consistente — a
+    Square Cloud serve arquivo grande por URL de download separada e pode
+    devolver a versão anterior por alguns instantes depois do upload. Sem as
+    tentativas, essa defasagem viraria "não salvou" para uma escrita que
+    funcionou. O upload em si já aconteceu; aqui só esperamos o armazenamento
+    acompanhar.
+    """
+    divergencias: List[str] = []
+    for espera in _ESPERAS_CONFERENCIA:
+        linhas = await sqlite_service.execute_query(
+            app_id,
+            """
+            SELECT l.infraction_limit, l.punishment_type, s.enabled
+            FROM security_limits l
+            LEFT JOIN security_systems s ON s.system_name = l.system_name
+            WHERE l.guild_id = ? AND l.system_name = ?
+            LIMIT 1
+            """,
+            (guild_id, sys_name),
+            force=True,
+        )
+        if linhas:
+            atual = linhas[0]
+            divergencias = []
+            if int(atual.get("infraction_limit") or 0) != limite:
+                divergencias.append(f"limite={atual.get('infraction_limit')!r} (esperado {limite})")
+            if str(atual.get("punishment_type") or "").strip().lower() != punishment:
+                divergencias.append(f"punição={atual.get('punishment_type')!r} (esperado {punishment!r})")
+            if atual.get("enabled") is not None and int(atual.get("enabled") or 0) != ativo:
+                divergencias.append(f"ativo={atual.get('enabled')!r} (esperado {ativo})")
+            if not divergencias:
+                return
+        else:
+            divergencias = [f"nenhuma linha para guild_id={guild_id}"]
+
+        if espera:
+            await asyncio.sleep(espera)
+
+    raise RuntimeError(
+        f"{sys_name}: o banco do bot não ficou com o valor enviado — "
+        + ", ".join(divergencias)
+        + ". A alteração NÃO está valendo; tente salvar de novo."
+    )
 
 
 async def list_action_configs(app_id: str) -> List[Dict[str, Any]]:
@@ -1038,6 +1122,7 @@ async def set_system_state(app_id: str, system_name: str, enabled: int) -> bool:
     sys_name = _to_system_name(system_name)
     if not sys_name:
         raise ValueError(f"Sistema inválido: {system_name!r}")
+    ativo = 1 if int(enabled) else 0
     await sqlite_service.execute_update(
         app_id,
         """
@@ -1045,9 +1130,29 @@ async def set_system_state(app_id: str, system_name: str, enabled: int) -> bool:
         VALUES (?, ?, datetime('now'))
         ON CONFLICT(system_name) DO UPDATE SET enabled=excluded.enabled, updated_at=datetime('now')
         """,
-        (sys_name, 1 if int(enabled) else 0),
+        (sys_name, ativo),
     )
-    return True
+    # Relê sem cache e com tentativas: confirma que o liga/desliga pegou de verdade
+    # no banco do bot, tolerando o atraso de propagação da leitura (mesma razão
+    # explicada em `_verificar_config_gravada`).
+    atual: Any = None
+    for espera in _ESPERAS_CONFERENCIA:
+        linhas = await sqlite_service.execute_query(
+            app_id,
+            "SELECT enabled FROM security_systems WHERE system_name = ? LIMIT 1",
+            (sys_name,),
+            force=True,
+        )
+        atual = linhas[0].get("enabled") if linhas else None
+        if atual is not None and int(atual or 0) == ativo:
+            return True
+        if espera:
+            await asyncio.sleep(espera)
+
+    raise RuntimeError(
+        f"{sys_name}: o banco do bot ficou com enabled={atual!r} em vez de {ativo}. "
+        "A alteração NÃO está valendo; tente de novo."
+    )
 
 
 def get_schema_sql() -> str:

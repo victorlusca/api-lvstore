@@ -166,8 +166,11 @@ class SQLiteService:
         if tmp_dir and os.path.isdir(tmp_dir):
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    async def execute_query(self, app_id: str, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
-        tmp_dir, db_path, _ = await self._download_snapshot(app_id)
+    async def execute_query(self, app_id: str, query: str, params: tuple = (), force: bool = False) -> List[Dict[str, Any]]:
+        """`force=True` ignora o cache de 15s e baixa o banco na hora — usado para
+        conferir, logo após um `execute_update`, se uma escrita realmente pegou
+        (ver `security_guard.upsert_action_config`)."""
+        tmp_dir, db_path, _ = await self._download_snapshot(app_id, force=force)
         if not db_path:
             return []
 
@@ -204,6 +207,29 @@ class SQLiteService:
         return bool(linhas)
 
     async def execute_update(self, app_id: str, query: str, params: tuple = ()):
+        return await self.execute_update_many(app_id, [(query, params)])
+
+    async def execute_update_many(self, app_id: str, statements: List[tuple]):
+        """Aplica VÁRIAS instruções num único ciclo baixar → gravar → subir.
+
+        Este banco é um blob: cada escrita baixa o arquivo inteiro, aplica o SQL e
+        publica o arquivo inteiro de volta. Portanto duas chamadas sequenciais de
+        `execute_update` para o MESMO banco não são duas escritas — são duas
+        substituições completas, e a segunda parte de um download novo (`force=True`,
+        que ignora de propósito o cache que a primeira acabou de popular). Quando a
+        Square Cloud ainda não propagou o primeiro upload — ela serve arquivo grande
+        por URL de download separada, onde mora a inconsistência de leitura-após-
+        escrita — a segunda baixa a versão ANTERIOR e publica por cima, desfazendo
+        em silêncio a primeira.
+
+        Foi assim que a punição escolhida no site se perdia: `upsert_action_config`
+        gravava `security_limits` e `security_systems` em duas chamadas, e a segunda
+        às vezes revertia a primeira. Passando as duas instruções aqui, existe um
+        único download e um único upload — a janela deixa de existir.
+        """
+        if not statements:
+            return True
+
         tmp_dir, db_path, tinha_wal = await self._download_snapshot(app_id, force=True)
         if not db_path:
             raise HTTPException(status_code=404, detail=f"Database {self.full_remote_path} not found in {app_id}")
@@ -212,7 +238,8 @@ class SQLiteService:
             conn = self._get_connection(db_path)
             try:
                 cursor = conn.cursor()
-                cursor.execute(query, params)
+                for query, params in statements:
+                    cursor.execute(query, tuple(params or ()))
                 conn.commit()
                 # Consolida o journal no arquivo principal: é o arquivo principal,
                 # sozinho, que sobe de volta para a Square Cloud.

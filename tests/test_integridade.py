@@ -14,11 +14,11 @@ LIMITE_JS = 2 ** 53  # maior inteiro que o JavaScript representa sem perder digi
 
 # ─── Codificacao ─────────────────────────────────────────────────────────────
 
-MARCAS_MOJIBAKE = ("Ã¡", "Ã£", "Ã§", "Ãµ", "Ã©", "Ãª", "Ã­", "Ã³", "Ãº", "â€", "﻿")
+MARCAS_MOJIBAKE = ("á", "ã", "ç", "õ", "é", "ê", "í", "ó", "ú", "â€", "﻿")
 
 
 def test_nenhum_fonte_com_utf8_duplo_codificado():
-    """Regressao: textos como 'Token invÃ¡lido' iam para a resposta HTTP.
+    """Regressao: textos como 'Token inválido' iam para a resposta HTTP.
 
     Nao era so comentario: mensagens de erro de auth e de validacao apareciam
     corrompidas no painel.

@@ -1,5 +1,5 @@
 ﻿"""
-routes_ranking.py â€” Rankings de Bate-Ponto e Pontos (FastAPI version).
+routes_ranking.py — Rankings de Bate-Ponto e Pontos (FastAPI version).
 """
 import sqlite3
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -14,7 +14,7 @@ router = APIRouter(tags=["Ranking"])
 _MASTER = "data/master_data.db"
 
 def _build_active_list():
-    """Retorna lista completa ordenada por horas DESC, com resoluÃ§Ã£o de jogador."""
+    """Retorna lista completa ordenada por horas DESC, com resolução de jogador."""
     con = master_con()
     rows = con.execute(
         """
@@ -64,7 +64,7 @@ def _build_points_list():
         })
     return result
 
-# â”€â”€ ATIVOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── ATIVOS ────────────────────────────────────────────────────────────────────
 
 @router.get("/ranking/ativos")
 async def ranking_ativos(_ = Depends(require_scope("references:read"))):
@@ -102,7 +102,7 @@ async def ranking_inativos(_ = Depends(require_scope("references:read"))):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# â”€â”€ PONTOS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── PONTOS ────────────────────────────────────────────────────────────────────
 
 @router.get("/ranking/pontos")
 async def ranking_pontos(_ = Depends(require_scope("references:read"))):

@@ -1,5 +1,5 @@
 ﻿"""
-routes_operational.py â€” Rotas e Transcripts (FastAPI version).
+routes_operational.py — Rotas e Transcripts (FastAPI version).
 """
 import sqlite3
 from datetime import datetime
@@ -13,7 +13,7 @@ from app.helpers import master_con, resolve_player
 router = APIRouter(tags=["Operational"])
 _MASTER = "data/master_data.db"
 
-# â”€â”€ ROTAS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── ROTAS ─────────────────────────────────────────────────────────────────────
 
 @router.get("/routes/ranking")
 async def ranking_rotas(_ = Depends(require_scope("references:read"))):
@@ -46,10 +46,10 @@ async def ranking_rotas(_ = Depends(require_scope("references:read"))):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# â”€â”€ TICKETS / TRANSCRIPTS â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── TICKETS / TRANSCRIPTS ─────────────────────────────────────────────────────
 
 def _fmt_ts(ts):
-    if not ts: return "â€”"
+    if not ts: return "—"
     try:
         if isinstance(ts, (int, float)):
             return datetime.utcfromtimestamp(int(ts)).strftime("%d/%m/%Y %H:%M")

@@ -1,5 +1,5 @@
 ﻿"""
-routes_players.py â€” CRUD de jogadores (FastAPI version).
+routes_players.py — CRUD de jogadores (FastAPI version).
 """
 import sqlite3
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -38,7 +38,7 @@ async def get_player(pid: int, _ = Depends(require_scope("references:read"))):
         ).fetchone()
         if not p:
             con.close()
-            raise HTTPException(status_code=404, detail="Jogador nÃ£o encontrado")
+            raise HTTPException(status_code=404, detail="Jogador não encontrado")
         discord_id = p["discordUserID"]
         h_row = con.execute(
             "SELECT total_hours FROM player_total_hours WHERE user_id=?", (discord_id,)
@@ -68,7 +68,7 @@ async def create_player(request: Request, _ = Depends(require_scope("references:
     game_id      = body.get("game_id")
     discord_id   = body.get("discord_id")
     if not nome or not login:
-        raise HTTPException(status_code=400, detail="Campos obrigatÃ³rios: nome, login")
+        raise HTTPException(status_code=400, detail="Campos obrigatórios: nome, login")
     try:
         con = sqlite3.connect(_MASTER)
         con.execute(
@@ -93,7 +93,7 @@ async def update_player(pid: int, request: Request, _ = Depends(require_scope("r
         exists = con.execute("SELECT 1 FROM players WHERE id=?", (pid,)).fetchone()
         if not exists:
             con.close()
-            raise HTTPException(status_code=404, detail="Jogador nÃ£o encontrado")
+            raise HTTPException(status_code=404, detail="Jogador não encontrado")
         
         updates, params = [], []
         mapping = {"nome": "playerName", "login": "playerLogin", "game_id": "playerID", "discord_id": "discordUserID"}
@@ -123,7 +123,7 @@ async def delete_player(pid: int, _ = Depends(require_scope("references:write"))
         con.commit()
         con.close()
         if n == 0:
-            raise HTTPException(status_code=404, detail="Jogador nÃ£o encontrado")
+            raise HTTPException(status_code=404, detail="Jogador não encontrado")
         write_audit(status=200, resource_type="players", resource_key=str(pid), message="Jogador removido")
         res, status = ok(None, "Jogador removido")
         return res

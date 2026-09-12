@@ -2,6 +2,7 @@
 Audit helpers for the standalone FastAPI service.
 """
 import contextvars
+import datetime as dt
 import json
 import sqlite3
 from typing import Any, Optional
@@ -9,6 +10,37 @@ from typing import Any, Optional
 from app.settings import data_path
 
 _MASTER_DB = data_path("master_data.db")
+
+
+def _resolver_tz():
+    """America/Sao_Paulo, com a mesma cascata de fallback do bot."""
+    try:
+        from zoneinfo import ZoneInfo
+        return ZoneInfo("America/Sao_Paulo")
+    except Exception:
+        pass
+    try:
+        import pytz
+        return pytz.timezone("America/Sao_Paulo")
+    except Exception:
+        # -03:00 fixo: correto desde 2019, quando acabou o horário de verão.
+        return dt.timezone(dt.timedelta(hours=-3))
+
+
+SP_TZ = _resolver_tz()
+
+
+def agora_sao_paulo() -> str:
+    """Horário de São Paulo no formato que `audit_log.created_at` sempre guardou.
+
+    O `created_at` vinha do DEFAULT da coluna. O DDL daqui usa `datetime('now')`
+    (UTC puro) e o do bot usa `datetime('now','localtime')` — que é o fuso do
+    PROCESSO. O bot ajusta TZ no boot; esta API roda em outro container, em UTC.
+    Como o painel exibe a string crua sem converter, os registros escritos por
+    aqui apareciam 3 horas adiantados. Gravar explícito elimina a dependência do
+    ambiente de quem escreve.
+    """
+    return dt.datetime.now(SP_TZ).strftime("%Y-%m-%d %H:%M:%S")
 _ctx_actor = contextvars.ContextVar("audit_actor", default="unknown")
 _ctx_actor_id = contextvars.ContextVar("audit_actor_id", default=None)
 _ctx_ip = contextvars.ContextVar("audit_ip", default="unknown")
@@ -103,12 +135,14 @@ def write_audit(
         con = sqlite3.connect(_MASTER_DB)
         con.execute(
             """INSERT INTO audit_log
-               (event_type, system_key, action_key, actor_discord_id, actor_name, 
-                target_discord_id, target_game_id, target_name, details_json, 
-                status, message, channel_id, message_id, bot_id, 
+               (created_at,
+                event_type, system_key, action_key, actor_discord_id, actor_name,
+                target_discord_id, target_game_id, target_name, details_json,
+                status, message, channel_id, message_id, bot_id,
                 source, severity, site_user_id)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-            (event_type, system_key, action_key, actor_discord_id, actor_name,
+               VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (agora_sao_paulo(),
+             event_type, system_key, action_key, actor_discord_id, actor_name,
              target_discord_id, target_game_id, target_name, _ser(details_json),
              status, message, channel_id, message_id, bot_id,
              source, severity, site_user_id),

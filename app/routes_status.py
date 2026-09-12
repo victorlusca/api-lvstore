@@ -1,5 +1,5 @@
 ﻿"""
-routes_status.py â€” status pÃºblico e resumo do sistema (FastAPI version).
+routes_status.py — status público e resumo do sistema (FastAPI version).
 """
 import os, sqlite3
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -36,7 +36,7 @@ def _check_setup():
                 for i, col in enumerate(cols):
                     val = row[i] if row else None
                     if not val or str(val).strip() == "":
-                        issues.append(f"{table}.{col} nÃ£o configurado"); complete = False
+                        issues.append(f"{table}.{col} não configurado"); complete = False
             except Exception as e:
                 issues.append(f"Erro ao ler {table}: {e}"); complete = False
         for table, mn in _REQUIRED_COUNTS.items():

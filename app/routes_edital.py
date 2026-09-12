@@ -1,5 +1,5 @@
 ﻿"""
-routes_edital.py â€” Perguntas de Edital Normal e Superior (FastAPI version).
+routes_edital.py — Perguntas de Edital Normal e Superior (FastAPI version).
 """
 import sqlite3
 from fastapi import APIRouter, Request, HTTPException, Depends
@@ -18,7 +18,7 @@ def _connect(*, row_factory: bool = False) -> sqlite3.Connection:
         con.row_factory = sqlite3.Row
     return con
 
-# â”€â”€ EDITAL NORMAL â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── EDITAL NORMAL ─────────────────────────────────────────────────────────────
 
 @router.get("/edital/normal")
 async def get_edital_normal(_ = Depends(require_scope("references:read"))):
@@ -53,7 +53,7 @@ async def criar_pergunta_normal(request: Request, _ = Depends(require_scope("ref
     body = await request.json() if await request.body() else {}
     texto = str(body.get("pergunta", "")).strip()
     if not texto:
-        raise HTTPException(status_code=400, detail="Campo 'pergunta' obrigatÃ³rio")
+        raise HTTPException(status_code=400, detail="Campo 'pergunta' obrigatório")
     try:
         con = _connect()
         con.execute("INSERT INTO recruitment_questions (question_text) VALUES (?)", (texto,))
@@ -73,7 +73,7 @@ async def deletar_pergunta_normal(qid: int, _ = Depends(require_scope("reference
         n = con.execute("DELETE FROM recruitment_questions WHERE id=?", (qid,)).rowcount
         con.commit(); con.close()
         if n == 0:
-            raise HTTPException(status_code=404, detail="Pergunta nÃ£o encontrada")
+            raise HTTPException(status_code=404, detail="Pergunta não encontrada")
         write_audit(status=200, resource_type="edital:pergunta", resource_key=str(qid), message="Pergunta normal removida")
         res, status = ok(None, "Pergunta removida")
         return res
@@ -81,7 +81,7 @@ async def deletar_pergunta_normal(qid: int, _ = Depends(require_scope("reference
         if isinstance(e, HTTPException): raise e
         raise HTTPException(status_code=500, detail=str(e))
 
-# â”€â”€ EDITAL SUPERIOR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── EDITAL SUPERIOR ───────────────────────────────────────────────────────────
 
 @router.get("/edital/superior")
 async def get_edital_superior(_ = Depends(require_scope("references:read"))):
@@ -102,7 +102,7 @@ async def criar_pergunta_superior(request: Request, _ = Depends(require_scope("r
     body = await request.json() if await request.body() else {}
     texto = str(body.get("pergunta", "")).strip()
     if not texto:
-        raise HTTPException(status_code=400, detail="Campo 'pergunta' obrigatÃ³rio")
+        raise HTTPException(status_code=400, detail="Campo 'pergunta' obrigatório")
     try:
         con = _connect()
         con.execute("INSERT INTO superior_application_questions (question_text) VALUES (?)", (texto,))

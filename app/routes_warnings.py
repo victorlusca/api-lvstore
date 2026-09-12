@@ -1,5 +1,5 @@
 ﻿"""
-routes_warnings.py â€” AdvertÃªncias e AusÃªncias (FastAPI version).
+routes_warnings.py — Advertências e Ausências (FastAPI version).
 """
 import sqlite3
 from datetime import datetime, timedelta
@@ -27,7 +27,7 @@ def _parse_dt(s):
 
 def _fmt_dt(s):
     d = _parse_dt(s)
-    return d.strftime("%d/%m/%Y %H:%M") if d else str(s or "â€”")
+    return d.strftime("%d/%m/%Y %H:%M") if d else str(s or "—")
 
 def _find_aplicado_por(game_user_id, warn_id):
     try:
@@ -35,7 +35,7 @@ def _find_aplicado_por(game_user_id, warn_id):
         row = con.execute(
             """
             SELECT actor_discord_id, actor_name FROM audit_log
-            WHERE system_key='AdvertÃªncia' AND action_key LIKE '%aplicar%'
+            WHERE system_key='Advertência' AND action_key LIKE '%aplicar%'
               AND (target_game_id=? OR message_id=?)
             ORDER BY id DESC LIMIT 1
             """,
@@ -84,9 +84,9 @@ async def delete_warning(wid: int, _ = Depends(require_scope("references:write")
         con = master_con()
         n = con.execute("DELETE FROM player_warnings WHERE id=?", (wid,)).rowcount
         con.commit(); con.close()
-        if n == 0: raise HTTPException(status_code=404, detail="AdvertÃªncia nÃ£o encontrada")
-        write_audit(status=200, resource_type="advertencia", resource_key=str(wid), message="AdvertÃªncia removida")
-        res, status = ok(None, "AdvertÃªncia removida")
+        if n == 0: raise HTTPException(status_code=404, detail="Advertência não encontrada")
+        write_audit(status=200, resource_type="advertencia", resource_key=str(wid), message="Advertência removida")
+        res, status = ok(None, "Advertência removida")
         return res
     except Exception as e:
         if isinstance(e, HTTPException): raise e

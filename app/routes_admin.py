@@ -1,5 +1,5 @@
 ﻿"""
-routes_admin.py â€” administraÃ§Ã£o, backup/export, auditoria e observabilidade (FastAPI version).
+routes_admin.py — administração, backup/export, auditoria e observabilidade (FastAPI version).
 """
 import os, json, shutil, sqlite3
 from datetime import datetime
@@ -16,7 +16,7 @@ _EMBED_DB     = "data/embed_data.db"
 _MASTER_DB    = "data/master_data.db"
 _BACKUP_DIR   = "data/backups"
 
-# â”€â”€â”€ Auditoria â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Auditoria ────────────────────────────────────────────────────────────────
 
 @router.get("/admin/audit")
 async def get_audit(
@@ -36,7 +36,7 @@ async def get_audit(
     res, status_code = ok({"entries": entries, "limit": limit, "offset": offset, "count": len(entries)})
     return res
 
-# â”€â”€â”€ MÃ©tricas â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Métricas ─────────────────────────────────────────────────────────────────
 
 @router.get("/admin/metrics")
 async def get_metrics(_ = Depends(require_scope("audit:read"))):
@@ -82,11 +82,11 @@ def _distinct_embed_systems():
     except Exception:
         return []
 
-# â”€â”€â”€ Export â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ─── Export ───────────────────────────────────────────────────────────────────
 
 @router.get("/admin/export/references")
 async def export_references(_ = Depends(require_scope("backup:run"))):
-    # ImplementaÃ§Ã£o simplificada de exportaÃ§Ã£o
+    # Implementação simplificada de exportação
     try:
         con = sqlite3.connect(_REFERENCE_DB)
         con.row_factory = sqlite3.Row

@@ -1,5 +1,5 @@
 ﻿"""
-routes_references.py â€” CRUD de referÃªncias com escopos, validaÃ§Ã£o e auditoria forte (FastAPI version).
+routes_references.py — CRUD de referências com escopos, validação e auditoria forte (FastAPI version).
 """
 import sqlite3, os, sys
 from fastapi import APIRouter, Request, HTTPException, Depends, Path
@@ -82,7 +82,7 @@ async def get_table_references(table: str, _ = Depends(require_scope("references
 @router.get("/references/{table}/{key}")
 async def get_reference_key(table: str, key: str, _ = Depends(require_scope("references:read"))):
     if table not in (_KV_TABLES | set(_SINGLE_TABLES)):
-        raise HTTPException(status_code=404, detail="OperaÃ§Ã£o suportada apenas para tabelas KV ou Single")
+        raise HTTPException(status_code=404, detail="Operação suportada apenas para tabelas KV ou Single")
     if table in _KV_TABLES:
         val = _read_kv(table).get(key)
     else:
@@ -95,14 +95,14 @@ async def get_reference_key(table: str, key: str, _ = Depends(require_scope("ref
 @router.put("/references/{table}/{key}")
 async def update_reference(table: str, key: str, request: Request, _ = Depends(require_scope("references:write"))):
     if table not in (_KV_TABLES | set(_SINGLE_TABLES)):
-        raise HTTPException(status_code=404, detail="EdiÃ§Ã£o direta suportada apenas para tabelas KV ou Single")
+        raise HTTPException(status_code=404, detail="Edição direta suportada apenas para tabelas KV ou Single")
     
     body = await request.json()
     new_val = body.get("value")
     if new_val is None:
-        raise HTTPException(status_code=400, detail="Campo 'value' obrigatÃ³rio no body")
+        raise HTTPException(status_code=400, detail="Campo 'value' obrigatório no body")
     
-    # ValidaÃ§Ãµes extras (pode levantar exceÃ§Ã£o)
+    # Validações extras (pode levantar exceção)
     validate_reference(table, key, new_val)
     
     # Auditoria (valor antigo)
@@ -116,15 +116,15 @@ async def update_reference(table: str, key: str, request: Request, _ = Depends(r
     else: _write_single(table, key, new_val)
 
     write_audit(status=200, resource_type=f"ref:{table}", resource_key=key, 
-                old_value=old_v, new_value=new_val, message=f"ReferÃªncia {table}/{key} atualizada")
+                old_value=old_v, new_value=new_val, message=f"Referência {table}/{key} atualizada")
     
-    res, status = ok(new_val, "ReferÃªncia atualizada")
+    res, status = ok(new_val, "Referência atualizada")
     return res
 
 @router.post("/reload/references")
 async def reload_references(_ = Depends(require_scope("reload:run"))):
-    # No FastAPI, o reload de referÃªncias pode ser apenas um sinal de sucesso se nÃ£o houver cache em memÃ³ria global
-    write_audit(status=200, resource_type="system", resource_key="reload", message="Reload de referÃªncias solicitado")
-    res, status = ok(None, "ReferÃªncias recarregadas")
+    # No FastAPI, o reload de referências pode ser apenas um sinal de sucesso se não houver cache em memória global
+    write_audit(status=200, resource_type="system", resource_key="reload", message="Reload de referências solicitado")
+    res, status = ok(None, "Referências recarregadas")
     return res
 

@@ -1,25 +1,25 @@
 ﻿"""
-routes_advanced.py â€” Hierarquia, Audit do Bot, SeguranÃ§a, Superiores e InformaÃ§Ãµes do Bot.
+routes_advanced.py — Hierarquia, Audit do Bot, Segurança, Superiores e Informações do Bot.
 
-GET    /hierarchy                          â†’ cargos da hierarquia
-POST   /hierarchy                          â†’ criar nÃ­vel
-PUT    /hierarchy/<id>                     â†’ editar nÃ­vel
-DELETE /hierarchy/<id>                     â†’ deletar nÃ­vel
+GET    /hierarchy                          → cargos da hierarquia
+POST   /hierarchy                          → criar nível
+PUT    /hierarchy/<id>                     → editar nível
+DELETE /hierarchy/<id>                     → deletar nível
 
-GET    /audit/bot                          â†’ audit_log do bot (master_data.db)
+GET    /audit/bot                          → audit_log do bot (master_data.db)
 
-GET    /security                           â†’ configuraÃ§Ãµes de seguranÃ§a
-GET    /security/<action_key>             â†’ whitelist de um tipo especÃ­fico
-POST   /security/<action_key>/users       â†’ adicionar usuÃ¡rio Ã  whitelist
-DELETE /security/<action_key>/users/<uid> â†’ remover usuÃ¡rio
-POST   /security/<action_key>/roles       â†’ adicionar cargo Ã  whitelist
-DELETE /security/<action_key>/roles/<rid> â†’ remover cargo
+GET    /security                           → configurações de segurança
+GET    /security/<action_key>             → whitelist de um tipo específico
+POST   /security/<action_key>/users       → adicionar usuário à whitelist
+DELETE /security/<action_key>/users/<uid> → remover usuário
+POST   /security/<action_key>/roles       → adicionar cargo à whitelist
+DELETE /security/<action_key>/roles/<rid> → remover cargo
 
-GET    /superiores/ranking                 â†’ ranking de superiores
-POST   /superiores/<discord_id>/resetar    â†’ zerar mÃ©tricas de um superior
-DELETE /superiores/<discord_id>            â†’ remover registro do superior
+GET    /superiores/ranking                 → ranking de superiores
+POST   /superiores/<discord_id>/resetar    → zerar métricas de um superior
+DELETE /superiores/<discord_id>            → remover registro do superior
 
-GET    /botinfo                            â†’ informaÃ§Ãµes do bot (mensalidade, vencimento, etc.)
+GET    /botinfo                            → informações do bot (mensalidade, vencimento, etc.)
 """
 import sqlite3
 from datetime import datetime
@@ -40,7 +40,7 @@ _SECURITY_ACTIONS = {
     "anti_webhook_create", "anti_member_prune", "anti_bot_add",
 }
 
-# â”€â”€ HIERARQUIA â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── HIERARQUIA ────────────────────────────────────────────────────────────────
 
 @router.get("/hierarchy")
 async def get_hierarchy(_ = Depends(require_scope("references:read"))):
@@ -72,7 +72,7 @@ async def create_hierarchy(request: Request, _ = Depends(require_scope("referenc
     nome  = str(body.get("nome", "")).strip()
     sigla = str(body.get("sigla", "")).strip()
     if not nome:
-        raise HTTPException(status_code=400, detail="Campo obrigatÃ³rio: nome")
+        raise HTTPException(status_code=400, detail="Campo obrigatório: nome")
     cargo_id = body.get("cargo_id")
     horas    = body.get("horas")
     idx      = body.get("index", 0)
@@ -88,8 +88,8 @@ async def create_hierarchy(request: Request, _ = Depends(require_scope("referenc
         con.close()
         write_audit(status=201, resource_type="hierarquia", resource_key=str(new_id),
                     new_value={"nome": nome, "sigla": sigla, "horas": horas, "is_superior": is_superior},
-                    message="NÃ­vel hierÃ¡rquico criado")
-        res, status = ok({"id": new_id}, "NÃ­vel criado", 201)
+                    message="Nível hierárquico criado")
+        res, status = ok({"id": new_id}, "Nível criado", 201)
         return res
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -102,7 +102,7 @@ async def update_hierarchy(hid: int, request: Request, _ = Depends(require_scope
         exists = con.execute("SELECT 1 FROM hierarquia WHERE id=?", (hid,)).fetchone()
         if not exists:
             con.close()
-            raise HTTPException(status_code=404, detail="NÃ­vel nÃ£o encontrado")
+            raise HTTPException(status_code=404, detail="Nível não encontrado")
         
         updates = []
         params = []
@@ -122,8 +122,8 @@ async def update_hierarchy(hid: int, request: Request, _ = Depends(require_scope
         con.close()
         
         write_audit(status=200, resource_type="hierarquia", resource_key=str(hid),
-                    new_value=body, message="NÃ­vel hierÃ¡rquico atualizado")
-        res, status = ok(None, "NÃ­vel atualizado")
+                    new_value=body, message="Nível hierárquico atualizado")
+        res, status = ok(None, "Nível atualizado")
         return res
     except Exception as e:
         if isinstance(e, HTTPException): raise e
@@ -137,16 +137,16 @@ async def delete_hierarchy(hid: int, _ = Depends(require_scope("references:write
         con.commit()
         con.close()
         if n == 0:
-            raise HTTPException(status_code=404, detail="NÃ­vel nÃ£o encontrado")
+            raise HTTPException(status_code=404, detail="Nível não encontrado")
         
-        write_audit(status=200, resource_type="hierarquia", resource_key=str(hid), message="NÃ­vel hierÃ¡rquico removido")
-        res, status = ok(None, "NÃ­vel removido")
+        write_audit(status=200, resource_type="hierarquia", resource_key=str(hid), message="Nível hierárquico removido")
+        res, status = ok(None, "Nível removido")
         return res
     except Exception as e:
         if isinstance(e, HTTPException): raise e
         raise HTTPException(status_code=500, detail=str(e))
 
-# â”€â”€ AUDIT LOG DO BOT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── AUDIT LOG DO BOT ──────────────────────────────────────────────────────────
 
 @router.get("/audit/bot")
 async def get_bot_audit(
@@ -210,7 +210,7 @@ async def get_bot_audit(
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# â”€â”€ INFORMAÃ‡Ã•ES DO BOT â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# ── INFORMAÇÕES DO BOT ────────────────────────────────────────────────────────
 
 @router.get("/botinfo")
 async def get_botinfo(_ = Depends(require_scope("references:read"))):
